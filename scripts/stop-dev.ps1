@@ -21,6 +21,7 @@ function Add-StopTarget {
   $commandLine = $process.CommandLine
   if ($commandLine -and (
       $commandLine.Contains($workspace) -or
+      $commandLine.EndsWith(' src/index.js') -or
       $commandLine.Contains('node --watch src/index.js') -or
       $commandLine.Contains('node  --watch src/index.js') -or
       $commandLine.Contains('vite\bin\vite.js') -or
@@ -46,10 +47,24 @@ foreach ($processId in $processIds) {
   $belongsToWorkspace = $chain | Where-Object {
     $_.CommandLine -and $_.CommandLine.Contains($workspace)
   }
+  $isKnownDevCommand = $chain | Where-Object {
+    $_.CommandLine -and (
+      $_.CommandLine.EndsWith(' src/index.js') -or
+      $_.CommandLine.Contains('node --watch src/index.js') -or
+      $_.CommandLine.Contains('node  --watch src/index.js') -or
+      $_.CommandLine.Contains('vite\bin\vite.js') -or
+      $_.CommandLine.Contains('vite/bin/vite.js')
+    )
+  }
 
-  if ($belongsToWorkspace) {
+  if ($belongsToWorkspace -or $isKnownDevCommand) {
     foreach ($item in $chain) {
-      if ($item.CommandLine -and ($item.CommandLine.Contains('node --watch src/index.js') -or $item.CommandLine.Contains('vite'))) {
+      if ($item.CommandLine -and (
+          $item.CommandLine.EndsWith(' src/index.js') -or
+          $item.CommandLine.Contains('node --watch src/index.js') -or
+          $item.CommandLine.Contains('node  --watch src/index.js') -or
+          $item.CommandLine.Contains('vite')
+        )) {
         Add-StopTarget -ProcessId $item.ProcessId
       }
     }

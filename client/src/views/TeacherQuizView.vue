@@ -216,12 +216,29 @@ async function playCurrentAudio() {
       text: currentItem.value.english,
       speed: speed.value
     });
-    audio = new Audio(result.url);
+    audio = new Audio(resolveAudioUrl(result.url));
     audio.volume = volume.value;
+    audio.preload = 'auto';
     await audio.play();
   } catch (err) {
     audioError.value = err.message;
   }
+}
+
+function resolveAudioUrl(url) {
+  if (!url) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+
+  if (import.meta.env.DEV) {
+    return `http://localhost:3000${url}`;
+  }
+
+  return url;
 }
 
 function revealAnswer() {
