@@ -15,6 +15,7 @@ export const CLASSROOM_CONFIG = {
   defaultMode: 'en-en',
   showToAnswerDelay: 2000,
   answerHoldDelay: 1500,
+  defaultVoiceMode: 'browser',
   defaultTtsSpeed: 0.7,
   defaultTtsVolume: 0.8,
   minTtsSpeed: 0.5,

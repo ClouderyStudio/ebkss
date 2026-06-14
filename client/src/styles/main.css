@@ -668,7 +668,7 @@ textarea {
 
 .classroom-controls {
   display: grid;
-  grid-template-columns: repeat(5, auto) minmax(126px, 150px) repeat(4, minmax(120px, 1fr)) auto auto;
+  grid-template-columns: repeat(5, auto) minmax(112px, 132px) minmax(108px, 126px) repeat(4, minmax(104px, 1fr)) auto auto;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
@@ -710,7 +710,7 @@ textarea {
 }
 
 .classroom-field select {
-  width: 112px;
+  width: 100%;
   padding: 7px 8px;
   border: 0;
   background: #f8fafc;
@@ -821,7 +821,7 @@ textarea {
   }
 
   .classroom-controls {
-    grid-template-columns: repeat(5, auto) 1fr auto;
+    grid-template-columns: repeat(5, auto) minmax(96px, 1fr) auto;
     align-items: center;
   }
 
@@ -840,11 +840,11 @@ textarea {
 
 @media (max-width: 1180px) and (min-width: 821px) {
   .classroom-controls {
-    grid-template-columns: repeat(5, auto) minmax(112px, 130px) repeat(2, minmax(108px, 1fr)) auto auto;
+    grid-template-columns: repeat(5, auto) minmax(108px, 128px) minmax(104px, 122px) repeat(2, minmax(96px, 1fr)) auto auto;
   }
 
-  .classroom-slider:nth-of-type(4),
-  .classroom-slider:nth-of-type(5) {
+  .classroom-slider:nth-of-type(3),
+  .classroom-slider:nth-of-type(4) {
     display: none;
   }
 }

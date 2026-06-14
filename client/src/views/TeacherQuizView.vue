@@ -88,6 +88,14 @@
         </select>
       </label>
 
+      <label class="classroom-field">
+        <Volume2 :size="18" aria-hidden="true" />
+        <select v-model="voiceMode">
+          <option value="browser">本地朗读</option>
+          <option value="cloud">AI音频</option>
+        </select>
+      </label>
+
       <label class="classroom-slider">
         <Timer :size="18" aria-hidden="true" />
         <input v-model.number="showDelaySeconds" type="range" min="1" max="5" step="0.5" />
@@ -165,6 +173,7 @@ const loading = ref(false);
 const error = ref('');
 const audioError = ref('');
 const autoNext = ref(true);
+const voiceMode = ref(CLASSROOM_CONFIG.defaultVoiceMode);
 const showDelaySeconds = ref(CLASSROOM_CONFIG.showToAnswerDelay / 1000);
 const holdDelaySeconds = ref(CLASSROOM_CONFIG.answerHoldDelay / 1000);
 const volume = ref(CLASSROOM_CONFIG.defaultTtsVolume);
@@ -173,6 +182,7 @@ let revealTimer;
 let nextTimer;
 let speechTimer;
 let audio;
+let selectedBrowserVoice = null;
 
 const pageStyle = {
   '--classroom-bg': CLASSROOM_CONFIG.backgroundColor,
@@ -201,6 +211,7 @@ function stopAudio() {
     audio.currentTime = 0;
     audio = null;
   }
+  window.speechSynthesis?.cancel();
 }
 
 async function playCurrentAudio() {
@@ -212,6 +223,11 @@ async function playCurrentAudio() {
   stopAudio();
 
   try {
+    if (voiceMode.value === 'browser' && 'speechSynthesis' in window) {
+      playBrowserSpeech(currentItem.value.english);
+      return;
+    }
+
     const result = await api.tts({
       text: currentItem.value.english,
       speed: speed.value
@@ -223,6 +239,41 @@ async function playCurrentAudio() {
   } catch (err) {
     audioError.value = err.message;
   }
+}
+
+function playBrowserSpeech(text) {
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'en-US';
+  utterance.volume = volume.value;
+  utterance.rate = Math.min(1.2, Math.max(0.65, speed.value));
+  utterance.pitch = 1;
+
+  const voice = getBrowserVoice();
+  if (voice) {
+    utterance.voice = voice;
+  }
+
+  utterance.onerror = (event) => {
+    audioError.value = `本地朗读失败：${event.error}`;
+  };
+
+  window.speechSynthesis.speak(utterance);
+}
+
+function getBrowserVoice() {
+  if (selectedBrowserVoice) {
+    return selectedBrowserVoice;
+  }
+
+  const voices = window.speechSynthesis?.getVoices?.() || [];
+  selectedBrowserVoice =
+    voices.find((voice) => voice.lang === 'en-US' && /female|zira|aria|jenny|samantha/i.test(voice.name)) ||
+    voices.find((voice) => voice.lang === 'en-US') ||
+    voices.find((voice) => voice.lang?.startsWith('en')) ||
+    null;
+
+  return selectedBrowserVoice;
 }
 
 function resolveAudioUrl(url) {
@@ -350,6 +401,7 @@ function onKeydown(event) {
 }
 
 watch(mode, resetCurrentCard);
+watch(voiceMode, resetCurrentCard);
 watch([showDelaySeconds, holdDelaySeconds, autoNext], () => {
   if (isRunning.value) {
     runCurrentCard();
@@ -367,6 +419,13 @@ watch(speed, () => {
 });
 
 onMounted(() => {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+      selectedBrowserVoice = null;
+      getBrowserVoice();
+    };
+    getBrowserVoice();
+  }
   loadClassroom();
   window.addEventListener('keydown', onKeydown);
 });

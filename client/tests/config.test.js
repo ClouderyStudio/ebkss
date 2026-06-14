@@ -19,6 +19,7 @@ describe('CLASSROOM_CONFIG', () => {
   });
 
   it('keeps TTS controls in the accepted range', () => {
+    expect(CLASSROOM_CONFIG.defaultVoiceMode).toBe('browser');
     expect(CLASSROOM_CONFIG.defaultTtsSpeed).toBeGreaterThanOrEqual(CLASSROOM_CONFIG.minTtsSpeed);
     expect(CLASSROOM_CONFIG.defaultTtsSpeed).toBeLessThanOrEqual(CLASSROOM_CONFIG.maxTtsSpeed);
   });
