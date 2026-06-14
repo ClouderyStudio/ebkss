@@ -11,7 +11,7 @@ export const QUIZ_CONFIG = {
 };
 
 export const CLASSROOM_CONFIG = {
-  defaultGroup: 'give',
+  defaultGroup: 'class-notes',
   defaultMode: 'en-en',
   showToAnswerDelay: 2000,
   answerHoldDelay: 1500,

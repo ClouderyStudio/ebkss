@@ -1,5 +1,5 @@
 import { execute, getPool, query } from '../db.js';
-import { classroomCorpus } from '../data/classroomSeedData.js';
+import { classroomCorpus, classroomNotesCorpus } from '../data/classroomSeedData.js';
 import { seedCorpus, seedUnits } from '../data/seedData.js';
 
 async function upsertUnit(unit) {
@@ -78,7 +78,14 @@ async function seed() {
     );
   }
 
-  for (const [index, item] of classroomCorpus.entries()) {
+  const allClassroomCorpus = [...classroomCorpus, ...classroomNotesCorpus];
+
+  const groupOrder = new Map();
+
+  for (const item of allClassroomCorpus) {
+    const nextOrder = (groupOrder.get(item.groupName) || 0) + 1;
+    groupOrder.set(item.groupName, nextOrder);
+
     await execute(
       `
         INSERT INTO classroom_corpus
@@ -100,14 +107,14 @@ async function seed() {
         item.phonetic,
         JSON.stringify(item.tags || []),
         item.groupName,
-        index + 1,
+        nextOrder,
         item.sourceKey
       ]
     );
   }
 
   console.log(
-    `Seed complete. Units: ${seedUnits.length}, corpus items: ${seedCorpus.length}, classroom items: ${classroomCorpus.length}.`
+    `Seed complete. Units: ${seedUnits.length}, corpus items: ${seedCorpus.length}, classroom items: ${allClassroomCorpus.length}.`
   );
   await getPool().end();
 }
