@@ -1,0 +1,26 @@
+{
+  "name": "english-basical-knowledge-study-system",
+  "private": true,
+  "version": "0.1.0",
+  "description": "课堂英语基础知识快速检测系统原型",
+  "type": "module",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "stop:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-dev.ps1",
+    "build": "npm run build -w server && npm run build -w client",
+    "start": "npm run start -w server",
+    "migrate": "npm run migrate -w server",
+    "seed": "npm run seed -w server",
+    "precache:tts": "npm run precache:tts -w server",
+    "test": "npm run test -w server && npm run test -w client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
