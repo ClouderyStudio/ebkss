@@ -255,6 +255,9 @@ function playBrowserSpeech(text) {
   }
 
   utterance.onerror = (event) => {
+    if (event.error === 'interrupted' || event.error === 'canceled') {
+      return;
+    }
     audioError.value = `本地朗读失败：${event.error}`;
   };
 
