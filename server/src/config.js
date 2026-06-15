@@ -46,8 +46,8 @@ export const config = {
     defaultVolume: toFloat(process.env.DEFAULT_TTS_VOLUME, 0.8)
   },
   classroom: {
-    showToAnswerDelay: toInt(process.env.DEFAULT_SHOW_TO_ANSWER_DELAY, 2000),
-    answerHoldDelay: toInt(process.env.DEFAULT_ANSWER_HOLD_DELAY, 1500)
+    showToAnswerDelay: toInt(process.env.DEFAULT_SHOW_TO_ANSWER_DELAY, 3500),
+    answerHoldDelay: toInt(process.env.DEFAULT_ANSWER_HOLD_DELAY, 3000)
   }
 };
 
