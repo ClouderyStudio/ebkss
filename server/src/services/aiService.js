@@ -68,8 +68,30 @@ async function chatJson(messages, options = {}) {
     throw new Error('Missing AI_API_KEY');
   }
 
+  const requestBody = {
+    model: options.model || config.ai.model,
+    messages: [...messages],
+    temperature: options.temperature ?? 0.2,
+    max_tokens: options.maxTokens ?? 1600
+  };
+
+  // JSON 模式
+  if (options.jsonMode) {
+    requestBody.response_format = { type: 'json_object' };
+    if (!requestBody.messages.some(m => m.role === 'system')) {
+      requestBody.messages.unshift({ role: 'system', content: 'You are a helpful assistant that outputs JSON.' });
+    }
+  }
+
+  // 流式传输：只要有数据在流动就不超时
+  if (options.stream) {
+    return await chatJsonStream(requestBody, options);
+  }
+
+  // 非流式：固定超时
+  const timeoutMs = options.timeoutMs ?? config.ai.timeoutMs;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.ai.timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${config.ai.baseUrl.replace(/\/$/, '')}/chat/completions`, {
@@ -78,12 +100,7 @@ async function chatJson(messages, options = {}) {
         Authorization: `Bearer ${config.ai.apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: config.ai.model,
-        messages,
-        temperature: options.temperature ?? 0.2,
-        max_tokens: options.maxTokens ?? 1600
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal
     });
 
@@ -98,6 +115,91 @@ async function chatJson(messages, options = {}) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * 流式 AI 调用：每收到一个数据块就重置超时（inactivity timeout）。
+ * 只要 AI 还在持续输出，连接就不会断开。
+ */
+async function chatJsonStream(requestBody, options = {}) {
+  const streamRequestBody = { ...requestBody, stream: true };
+  const inactivityTimeout = options.inactivityTimeoutMs ?? 30000; // 30秒无数据则超时
+
+  const response = await fetch(`${config.ai.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.ai.apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(streamRequestBody)
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`AI stream request failed (${response.status}): ${detail.slice(0, 240)}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let accumulated = '';
+  let buffer = '';
+  let lastChunkTime = Date.now();
+
+  try {
+    while (true) {
+      // 检查 inactivity 超时
+      const elapsed = Date.now() - lastChunkTime;
+      if (elapsed > inactivityTimeout) {
+        throw new Error(`AI stream timed out after ${inactivityTimeout / 1000}s of inactivity`);
+      }
+
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      // 收到数据，重置计时
+      lastChunkTime = Date.now();
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // 解析 SSE 行：data: {...}
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // 保留不完整的最后一行
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+
+        const jsonStr = trimmed.slice(5).trim();
+        if (jsonStr === '[DONE]') continue;
+
+        try {
+          const event = JSON.parse(jsonStr);
+          const delta = event?.choices?.[0]?.delta?.content;
+          if (delta) {
+            accumulated += delta;
+          }
+        } catch {
+          // 忽略无法解析的行
+        }
+      }
+    }
+
+    // 处理 buffer 中剩余数据
+    if (buffer.trim()) {
+      const trimmed = buffer.trim();
+      if (trimmed.startsWith('data:') && !trimmed.includes('[DONE]')) {
+        try {
+          const event = JSON.parse(trimmed.slice(5).trim());
+          const delta = event?.choices?.[0]?.delta?.content;
+          if (delta) accumulated += delta;
+        } catch { /* ignore */ }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return extractJson(accumulated);
 }
 
 export async function generateQuestions({ grammarPoint, notesContent, count }) {
@@ -256,4 +358,58 @@ ${corpusLines}
   );
 
   return classroomGraphSchema.parse(data);
+}
+
+const importEntrySchema = z.object({
+  english: z.string().min(1),
+  chinese: z.string().optional().default(''),
+  englishExplain: z.string().optional().default(''),
+  phonetic: z.string().optional().default(''),
+  tags: z.array(z.string()).optional().default([])
+});
+
+/**
+ * AI 解析英语笔记文本，提取结构化语料条目（english / chinese / englishExplain / phonetic / tags）。
+ */
+export async function parseEnglishNotes(notesText, groupName) {
+  // 使用 JSON 模式 + 更高性能的模型，分块处理
+  const lines = notesText.split('\n').filter(Boolean);
+  const chunkSize = 20;
+  const allEntries = [];
+
+  for (let i = 0; i < lines.length; i += chunkSize) {
+    const chunk = lines.slice(i, i + chunkSize).join('\n');
+
+    const model = config.ai.notesModel || config.ai.model;
+    const data = await chatJson(
+      [
+        {
+          role: 'system',
+          content: `You are an English vocabulary note parser. Extract vocabulary items and return a JSON object with an "entries" array.
+Each entry: { "english": "word or phrase", "chinese": "Chinese meaning", "englishExplain": "English explanation", "phonetic": "pronunciation if available", "tags": ["vocabulary"|"phrase"|"grammar"|"sentence"] }`
+        },
+        {
+          role: 'user',
+          content: `Extract vocabulary entries from this English study note. Return JSON with "entries" array.
+
+${chunk}
+
+Group: ${groupName}`
+        }
+      ],
+      {
+        model,
+        temperature: 0.05,
+        maxTokens: 1000,
+        jsonMode: true,
+        stream: true,
+        inactivityTimeoutMs: 60000
+      }
+    );
+
+    const entries = Array.isArray(data) ? data : (data.entries || data.items || []);
+    allEntries.push(...entries);
+  }
+
+  return z.array(importEntrySchema).parse(allEntries);
 }

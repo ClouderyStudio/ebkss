@@ -22,6 +22,36 @@ export function graphNodeIdFromEnglish(english) {
   return String(english).trim().toLowerCase().replace(/\s+/g, '_');
 }
 
+function normalizeTags(tags) {
+  if (Array.isArray(tags)) {
+    return tags.map((tag) => String(tag).trim()).filter(Boolean);
+  }
+
+  if (typeof tags === 'string') {
+    return tags
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function mapClassroomCorpusRow(row) {
+  return {
+    id: row.id,
+    english: row.english,
+    chinese: row.chinese,
+    englishExplain: row.english_explain,
+    phonetic: row.phonetic,
+    tags: parseJson(row.tags, []),
+    groupName: row.group_name,
+    sortOrder: row.sort_order,
+    sourceKey: row.source_key,
+    graphNodeId: graphNodeIdFromEnglish(row.english)
+  };
+}
+
 function fallbackGraphForGroup(group, corpus = []) {
   if (group === 'class-notes' && corpus.length > 0) {
     return buildClassNotesGraph(corpus);
@@ -91,7 +121,7 @@ export async function getClassroomCorpus(groupName = 'give') {
   const group = normalizeGroupName(groupName);
   const rows = await query(
     `
-      SELECT id, english, chinese, english_explain, phonetic, tags, group_name
+      SELECT id, english, chinese, english_explain, phonetic, tags, group_name, sort_order, source_key
       FROM classroom_corpus
       WHERE group_name = ?
       ORDER BY sort_order, id
@@ -99,16 +129,109 @@ export async function getClassroomCorpus(groupName = 'give') {
     [group]
   );
 
+  return rows.map(mapClassroomCorpusRow);
+}
+
+export async function getClassroomGroups() {
+  const rows = await query(
+    `
+      SELECT group_name, COUNT(*) AS item_count
+      FROM classroom_corpus
+      GROUP BY group_name
+      ORDER BY group_name
+    `
+  );
+
   return rows.map((row) => ({
-    id: row.id,
-    english: row.english,
-    chinese: row.chinese,
-    englishExplain: row.english_explain,
-    phonetic: row.phonetic,
-    tags: parseJson(row.tags, []),
     groupName: row.group_name,
-    graphNodeId: graphNodeIdFromEnglish(row.english)
+    itemCount: Number(row.item_count)
   }));
+}
+
+export async function invalidateClassroomGraph(groupName) {
+  const group = normalizeGroupName(groupName);
+  await execute('DELETE FROM classroom_knowledge_graphs WHERE group_name = ?', [group]);
+}
+
+export async function createClassroomCorpusItem(input) {
+  const group = normalizeGroupName(input.groupName);
+  const [maxRow] = await query('SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM classroom_corpus WHERE group_name = ?', [
+    group
+  ]);
+  const sortOrder = input.sortOrder ?? Number(maxRow?.max_order || 0) + 1;
+
+  const result = await execute(
+    `
+      INSERT INTO classroom_corpus
+        (english, chinese, english_explain, phonetic, tags, group_name, sort_order, source_key)
+      VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?)
+    `,
+    [
+      input.english,
+      input.chinese || '',
+      input.englishExplain || '',
+      input.phonetic || '',
+      JSON.stringify(normalizeTags(input.tags)),
+      group,
+      sortOrder,
+      input.sourceKey || `manual-${group}-${Date.now()}`
+    ]
+  );
+
+  await invalidateClassroomGraph(group);
+  const [created] = await query('SELECT * FROM classroom_corpus WHERE id = ?', [result.insertId]);
+  return mapClassroomCorpusRow(created);
+}
+
+export async function updateClassroomCorpusItem(id, input) {
+  const [existing] = await query('SELECT * FROM classroom_corpus WHERE id = ?', [id]);
+  if (!existing) {
+    throw new Error('Classroom corpus item not found');
+  }
+
+  const group = normalizeGroupName(input.groupName ?? existing.group_name);
+  await execute(
+    `
+      UPDATE classroom_corpus
+      SET english = ?,
+          chinese = ?,
+          english_explain = ?,
+          phonetic = ?,
+          tags = CAST(? AS JSON),
+          group_name = ?,
+          sort_order = ?
+      WHERE id = ?
+    `,
+    [
+      input.english ?? existing.english,
+      input.chinese ?? existing.chinese ?? '',
+      input.englishExplain ?? existing.english_explain ?? '',
+      input.phonetic ?? existing.phonetic ?? '',
+      JSON.stringify(normalizeTags(input.tags ?? parseJson(existing.tags, []))),
+      group,
+      input.sortOrder ?? existing.sort_order ?? 0,
+      id
+    ]
+  );
+
+  await invalidateClassroomGraph(existing.group_name);
+  if (group !== existing.group_name) {
+    await invalidateClassroomGraph(group);
+  }
+
+  const [updated] = await query('SELECT * FROM classroom_corpus WHERE id = ?', [id]);
+  return mapClassroomCorpusRow(updated);
+}
+
+export async function deleteClassroomCorpusItem(id) {
+  const [existing] = await query('SELECT * FROM classroom_corpus WHERE id = ?', [id]);
+  if (!existing) {
+    throw new Error('Classroom corpus item not found');
+  }
+
+  await execute('DELETE FROM classroom_corpus WHERE id = ?', [id]);
+  await invalidateClassroomGraph(existing.group_name);
+  return { deleted: true, id };
 }
 
 export async function getClassroomGraph(groupName = 'give') {

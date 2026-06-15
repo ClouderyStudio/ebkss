@@ -18,6 +18,10 @@
           <WandSparkles :size="18" aria-hidden="true" />
           <span>教师工具</span>
         </RouterLink>
+        <RouterLink to="/teacher/corpus">
+          <Database :size="18" aria-hidden="true" />
+          <span>语料管理</span>
+        </RouterLink>
       </nav>
     </header>
     <main class="shell-main">
@@ -27,5 +31,5 @@
 </template>
 
 <script setup>
-import { BookOpen, MonitorPlay, PenLine, WandSparkles } from '@lucide/vue';
+import { BookOpen, Database, MonitorPlay, PenLine, WandSparkles } from '@lucide/vue';
 </script>

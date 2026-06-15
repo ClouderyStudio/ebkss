@@ -22,6 +22,25 @@ export const api = {
   health: () => request('/api/health'),
   units: () => request('/api/units'),
   classroomCorpus: (group = 'give') => request(`/api/corpus?group=${encodeURIComponent(group)}`),
+  classroomGroups: () => request('/api/corpus/groups'),
+  createClassroomItem: (payload) =>
+    request('/api/corpus', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  updateClassroomItem: (id, payload) =>
+    request(`/api/corpus/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    }),
+  deleteClassroomItem: (id) =>
+    request(`/api/corpus/${id}`, {
+      method: 'DELETE'
+    }),
+  invalidateClassroomGraph: (group = 'class-notes') =>
+    request(`/api/graph?group=${encodeURIComponent(group)}`, {
+      method: 'DELETE'
+    }),
   tts: ({ text, speed, voice }) => {
     const params = new URLSearchParams({ text, speed: String(speed) });
     if (voice) {
@@ -47,5 +66,30 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
+  /**
+   * 一键导入 Word 笔记文件
+   * @param {File} file - .docx 文件
+   * @param {string} groupName - 语料分组名
+   */
+  /**
+   * 一键导入 Word 笔记文件
+   * @param {File} file - .docx 文件
+   * @param {string} groupName - 语料分组名
+   * @param {'rule'|'ai'} mode - 解析模式：rule=规则解析(快速) / ai=AI增强
+   */
+  importWord: async (file, groupName, mode = 'rule') => {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+
+    return request('/api/corpus/import-word', {
+      method: 'POST',
+      body: JSON.stringify({ file: base64, groupName, mode })
+    });
+  },
   graph: (grammarPointId) => request(`/api/graph/${grammarPointId}`)
 };

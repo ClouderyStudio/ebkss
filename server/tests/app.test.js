@@ -54,6 +54,9 @@ vi.mock('../src/services/aiService.js', () => ({
 }));
 
 vi.mock('../src/services/classroomService.js', () => ({
+  createClassroomCorpusItem: vi.fn(async (input) => ({ id: 2, ...input, tags: input.tags, graphNodeId: 'new_word' })),
+  updateClassroomCorpusItem: vi.fn(async (id, input) => ({ id, ...input, graphNodeId: 'updated_word' })),
+  deleteClassroomCorpusItem: vi.fn(async (id) => ({ deleted: true, id })),
   getClassroomCorpus: vi.fn(async () => [
     {
       id: 1,
@@ -66,10 +69,12 @@ vi.mock('../src/services/classroomService.js', () => ({
       graphNodeId: 'give_up'
     }
   ]),
+  getClassroomGroups: vi.fn(async () => [{ groupName: 'give', itemCount: 5 }]),
   getClassroomGraph: vi.fn(async () => ({
     cached: true,
     graph: { nodes: [{ id: 'give_up', name: 'give up', type: 'phrase', meaning: '放弃' }], edges: [] }
-  }))
+  })),
+  invalidateClassroomGraph: vi.fn(async () => undefined)
 }));
 
 vi.mock('../src/services/graphService.js', () => ({
@@ -115,11 +120,34 @@ describe('api routes', () => {
     const corpus = await request(app).get('/api/corpus?group=give').expect(200);
     expect(corpus.body.items[0].graphNodeId).toBe('give_up');
 
+    const groups = await request(app).get('/api/corpus/groups').expect(200);
+    expect(groups.body.groups[0].groupName).toBe('give');
+
     const tts = await request(app).get('/api/tts?text=give%20up&speed=0.7').expect(200);
     expect(tts.body.cached).toBe(true);
 
     const graph = await request(app).get('/api/graph?group=give').expect(200);
     expect(graph.body.graph.nodes[0].id).toBe('give_up');
+  });
+
+  it('manages classroom corpus items', async () => {
+    const created = await request(app)
+      .post('/api/corpus')
+      .send({ english: 'new word', chinese: '新词', groupName: 'class-notes', tags: ['phrase'] })
+      .expect(201);
+    expect(created.body.item.english).toBe('new word');
+
+    const updated = await request(app)
+      .put('/api/corpus/2')
+      .send({ english: 'updated word', chinese: '更新' })
+      .expect(200);
+    expect(updated.body.item.id).toBe(2);
+
+    const deleted = await request(app).delete('/api/corpus/2').expect(200);
+    expect(deleted.body.deleted).toBe(true);
+
+    const invalidated = await request(app).delete('/api/graph?group=class-notes').expect(200);
+    expect(invalidated.body.invalidated).toBe(true);
   });
 
   it('submits answers and saves generated corpus', async () => {

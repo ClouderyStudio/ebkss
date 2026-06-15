@@ -4,20 +4,31 @@ import { z } from 'zod';
 import { pingDatabase, query } from './db.js';
 import { config } from './config.js';
 import { generateQuestions } from './services/aiService.js';
-import { getClassroomCorpus, getClassroomGraph } from './services/classroomService.js';
+import {
+  createClassroomCorpusItem,
+  deleteClassroomCorpusItem,
+  getClassroomCorpus,
+  getClassroomGraph,
+  getClassroomGroups,
+  invalidateClassroomGraph,
+  updateClassroomCorpusItem
+} from './services/classroomService.js';
 import { getKnowledgeGraph } from './services/graphService.js';
 import { getQuiz, getUnits, saveGeneratedQuestions, submitQuiz } from './services/quizService.js';
 import { getOrCreateSpeech } from './services/ttsService.js';
+import { parseDocx } from './utils/docxParser.js';
+import { parseNotesLines } from './utils/notesParser.js';
+import { parseEnglishNotes } from './services/aiService.js';
 
 export function createApp() {
   const app = express();
 
-  app.use(
-    cors({
-      origin: config.clientOrigin,
-      credentials: false
-    })
-  );
+  // 生产模式（内置前端）不需要 CORS；开发模式允许 Vite 跨域
+  if (config.serveClient) {
+    app.use(cors({ origin: true, credentials: false }));
+  } else {
+    app.use(cors({ origin: config.clientOrigin, credentials: false }));
+  }
   app.use(express.json({ limit: '1mb' }));
   app.use('/audio/cache', express.static(config.tts.cachePath));
 
@@ -47,6 +58,119 @@ export function createApp() {
         .parse(req.query);
 
       res.json({ group: input.group, items: await getClassroomCorpus(input.group) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/corpus/groups', async (_req, res, next) => {
+    try {
+      res.json({ groups: await getClassroomGroups() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  const classroomCorpusBodySchema = z.object({
+    english: z.string().trim().min(1),
+    chinese: z.string().optional().default(''),
+    englishExplain: z.string().optional().default(''),
+    phonetic: z.string().optional().default(''),
+    tags: z.union([z.array(z.string()), z.string()]).optional().default([]),
+    groupName: z.string().trim().min(1).default('class-notes'),
+    sortOrder: z.coerce.number().int().min(0).optional(),
+    sourceKey: z.string().optional()
+  });
+
+  app.post('/api/corpus', async (req, res, next) => {
+    try {
+      res.status(201).json({ item: await createClassroomCorpusItem(classroomCorpusBodySchema.parse(req.body)) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put('/api/corpus/:id', async (req, res, next) => {
+    try {
+      const params = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      res.json({ item: await updateClassroomCorpusItem(params.id, classroomCorpusBodySchema.partial().parse(req.body)) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/corpus/:id', async (req, res, next) => {
+    try {
+      const params = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      res.json(await deleteClassroomCorpusItem(params.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ── 一键导入 Word 文件 ──────────────────────────────────
+  // mode: "rule"（规则解析，快速）| "ai"（AI 增强，精度高但慢）
+  const importWordSchema = z.object({
+    file: z.string().min(1),
+    groupName: z.string().trim().min(1).default('class-notes'),
+    mode: z.enum(['rule', 'ai']).default('rule')
+  });
+
+  async function processImport(base64File, groupName, mode) {
+    const fileBuffer = Buffer.from(base64File, 'base64');
+    const lines = await parseDocx(fileBuffer);
+    if (lines.length === 0) {
+      throw new Error('Word 文件内容为空或无法解析');
+    }
+
+    let entries;
+    if (mode === 'ai') {
+      const notesText = lines.join('\n');
+      entries = await parseEnglishNotes(notesText, groupName);
+    } else {
+      entries = parseNotesLines(lines);
+    }
+
+    if (entries.length === 0) {
+      throw new Error('未能从笔记中提取出有效条目');
+    }
+
+    const created = [];
+    for (const entry of entries) {
+      const item = await createClassroomCorpusItem({
+        english: entry.english,
+        chinese: entry.chinese || '',
+        englishExplain: entry.englishExplain || '',
+        phonetic: entry.phonetic || '',
+        tags: entry.tags || [],
+        groupName,
+        sourceKey: `word-import-${mode}-${Date.now()}-${entry.english.slice(0, 20)}`
+      });
+      created.push(item);
+    }
+
+    await invalidateClassroomGraph(groupName);
+    return { imported: created.length, groupName, mode, items: created };
+  }
+
+  app.post('/api/corpus/import-word', async (req, res, next) => {
+    try {
+      const { file, groupName, mode } = importWordSchema.parse(req.body);
+      res.json(await processImport(file, groupName, mode));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/graph', async (req, res, next) => {
+    try {
+      const input = z
+        .object({
+          group: z.string().trim().min(1).default('class-notes')
+        })
+        .parse(req.query);
+      await invalidateClassroomGraph(input.group);
+      res.json({ invalidated: true, group: input.group });
     } catch (error) {
       next(error);
     }

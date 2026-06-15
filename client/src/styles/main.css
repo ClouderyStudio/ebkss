@@ -102,7 +102,8 @@ a {
 
 .home-grid,
 .student-layout,
-.tools-layout {
+.tools-layout,
+.corpus-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 20px;
@@ -123,6 +124,83 @@ a {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 22px;
+}
+
+.corpus-form {
+  display: grid;
+  gap: 16px;
+}
+
+.corpus-toolbar {
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+}
+
+.inline-actions {
+  align-self: end;
+  margin-top: 0;
+}
+
+.small-button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.danger-button {
+  color: var(--danger);
+}
+
+.corpus-table-panel {
+  overflow: hidden;
+}
+
+.corpus-table {
+  display: grid;
+  gap: 10px;
+}
+
+.corpus-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 180px) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.corpus-row-main {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.corpus-row-main strong,
+.corpus-row-main span,
+.corpus-row-main small {
+  overflow-wrap: anywhere;
+}
+
+.corpus-row-main strong {
+  font-size: 18px;
+}
+
+.tag-line,
+.corpus-row-actions,
+.corpus-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-line {
+  flex-wrap: wrap;
+}
+
+.corpus-row-meta {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .section-title {
@@ -756,7 +834,7 @@ textarea {
   .nav-links {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
 
   .nav-links a {
@@ -764,7 +842,8 @@ textarea {
   }
 
   .home-grid,
-  .form-grid {
+  .form-grid,
+  .corpus-toolbar {
     grid-template-columns: 1fr;
   }
 
@@ -774,6 +853,14 @@ textarea {
 
   .review-row {
     grid-template-columns: 1fr;
+  }
+
+  .corpus-row {
+    grid-template-columns: 1fr;
+  }
+
+  .corpus-row-actions {
+    justify-content: flex-start;
   }
 
   .presentation-toolbar {
