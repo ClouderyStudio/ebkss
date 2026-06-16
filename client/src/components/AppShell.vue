@@ -14,13 +14,9 @@
           <PenLine :size="18" aria-hidden="true" />
           <span>学生练习</span>
         </RouterLink>
-        <RouterLink to="/teacher/tools">
-          <WandSparkles :size="18" aria-hidden="true" />
-          <span>教师工具</span>
-        </RouterLink>
-        <RouterLink to="/teacher/corpus">
-          <Database :size="18" aria-hidden="true" />
-          <span>语料管理</span>
+        <RouterLink to="/admin">
+          <Wrench :size="18" aria-hidden="true" />
+          <span>管理工具</span>
         </RouterLink>
       </nav>
     </header>
@@ -31,5 +27,5 @@
 </template>
 
 <script setup>
-import { BookOpen, Database, MonitorPlay, PenLine, WandSparkles } from '@lucide/vue';
+import { BookOpen, MonitorPlay, PenLine, Wrench } from '@lucide/vue';
 </script>

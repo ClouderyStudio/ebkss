@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
 // 需要登录的路由前缀
-const ADMIN_ROUTES = ['/teacher/tools', '/teacher/corpus'];
+const ADMIN_ROUTES = ['/admin', '/teacher/tools', '/teacher/corpus'];
 
 function isAuthenticated() {
   const token = localStorage.getItem('ebkss_token') || '';
@@ -23,8 +23,9 @@ export const router = createRouter({
     { path: '/teacher/quiz', name: 'teacher-quiz', component: () => import('./views/TeacherQuizView.vue') },
     { path: '/class', name: 'classroom', component: () => import('./views/TeacherQuizView.vue') },
     { path: '/student/quiz', name: 'student-quiz', component: () => import('./views/StudentQuizView.vue') },
-    { path: '/teacher/tools', name: 'teacher-tools', component: () => import('./views/TeacherToolsView.vue') },
-    { path: '/teacher/corpus', name: 'teacher-corpus', component: () => import('./views/CorpusManagerView.vue') }
+    { path: '/admin', name: 'admin', component: () => import('./views/AdminView.vue') },
+    { path: '/teacher/tools', redirect: '/admin' },
+    { path: '/teacher/corpus', redirect: '/admin' }
   ]
 });
 

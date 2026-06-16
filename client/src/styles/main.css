@@ -1029,3 +1029,48 @@ textarea {
   min-width: 140px;
   justify-content: center;
 }
+
+/* ── 管理页 Tab ──────────────────────────── */
+.admin-layout {
+  padding: 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.admin-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--line, #e2e8f0);
+  margin-bottom: 1.5rem;
+}
+.admin-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  background: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted, #64748b);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.admin-tab:hover {
+  color: var(--text, #1e293b);
+}
+.admin-tab.active {
+  color: var(--primary, #2563eb);
+  border-bottom-color: var(--primary, #2563eb);
+}
+.admin-layout .import-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.admin-layout .import-controls .field {
+  flex: 1;
+  min-width: 200px;
+}
