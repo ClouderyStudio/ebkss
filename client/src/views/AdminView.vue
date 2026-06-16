@@ -70,24 +70,10 @@
             </div>
           </div>
 
-          <!-- 新增/编辑 -->
-          <form class="corpus-form" @submit.prevent="saveForm">
-            <div class="section-title"><Pencil :size="20" /><h2>{{ editingId ? '编辑' : '新增' }}</h2></div>
-            <div class="form-grid">
-              <label class="field"><span>英语</span><input v-model.trim="form.english" required /></label>
-              <label class="field"><span>中文</span><input v-model.trim="form.chinese" /></label>
-              <label class="field"><span>音标</span><input v-model.trim="form.phonetic" /></label>
-            </div>
-            <label class="field"><span>英文解释</span><textarea v-model.trim="form.englishExplain" rows="2" /></label>
-            <div class="form-grid">
-              <label class="field"><span>标签（逗号分隔）</span><input v-model.trim="form.tagsText" /></label>
-              <label class="field compact"><span>排序</span><input v-model.number="form.sortOrder" type="number" min="0" /></label>
-              <div class="action-row inline-actions">
-                <button class="primary-button" type="submit"><Save :size="18" /><span>{{ editingId ? '保存' : '新增' }}</span></button>
-                <button class="secondary-button" type="button" @click="resetForm"><X :size="18" /><span>清空</span></button>
-              </div>
-            </div>
-          </form>
+          <!-- 新增按钮 -->
+          <button class="primary-button" type="button" @click="openFormModal()">
+            <PlusCircle :size="18" /> <span>新增语料</span>
+          </button>
 
           <div v-if="message" class="notice">{{ message }}</div>
           <div v-if="error" class="notice error">{{ error }}</div>
@@ -112,7 +98,7 @@
                 <small>#{{ item.sortOrder }}</small>
               </div>
               <div class="corpus-row-actions">
-                <button class="secondary-button small-button" @click="editItem(item)"><Pencil :size="16" /> 编辑</button>
+                <button class="secondary-button small-button" @click="openFormModal(item)"><Pencil :size="16" /> 编辑</button>
                 <button class="secondary-button small-button danger-button" @click="deleteItem(item)"><Trash2 :size="16" /> 删除</button>
               </div>
             </article>
@@ -167,12 +153,40 @@
         <GraphPanel v-if="aiGraph" :graph="aiGraph" />
       </div>
     </section>
+
+    <!-- 新增/编辑弹窗 -->
+    <Teleport to="body">
+      <div v-if="showFormModal" class="modal-backdrop" @click.self="showFormModal = false">
+        <form class="modal-panel" @submit.prevent="saveForm">
+          <div class="modal-header">
+            <h2>{{ editingId ? '编辑语料' : '新增语料' }}</h2>
+            <button class="icon-button" type="button" @click="showFormModal = false"><X :size="20" /></button>
+          </div>
+          <div class="modal-body">
+            <div class="form-grid">
+              <label class="field"><span>英语 *</span><input v-model.trim="form.english" required /></label>
+              <label class="field"><span>中文</span><input v-model.trim="form.chinese" /></label>
+              <label class="field"><span>音标</span><input v-model.trim="form.phonetic" /></label>
+            </div>
+            <label class="field"><span>英文解释</span><textarea v-model.trim="form.englishExplain" rows="2" /></label>
+            <div class="form-grid">
+              <label class="field"><span>标签</span><input v-model.trim="form.tagsText" placeholder="逗号分隔" /></label>
+              <label class="field compact"><span>排序</span><input v-model.number="form.sortOrder" type="number" min="0" /></label>
+            </div>
+            <div class="action-row">
+              <button class="primary-button" type="submit"><Save :size="18" /><span>{{ editingId ? '保存修改' : '新增语料' }}</span></button>
+              <button class="secondary-button" type="button" @click="showFormModal = false"><X :size="18" /><span>取消</span></button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </Teleport>
   </AppShell>
 </template>
 
 <script setup>
 // ── 语料管理 ───────────────────────────────────
-import { Database, ListChecks, Network, Pencil, RefreshCw, Save, Sparkles, Trash2, Upload, WandSparkles, X, Zap } from '@lucide/vue';
+import { Database, ListChecks, Network, Pencil, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, WandSparkles, X, Zap } from '@lucide/vue';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { api, API_BASE } from '../api.js';
 import AppShell from '../components/AppShell.vue';
@@ -189,6 +203,7 @@ const loading = ref(false);
 const editingId = ref(0);
 const message = ref('');
 const error = ref('');
+const showFormModal = ref(false);
 const fileInput = ref(null);
 const selectedFile = ref(null);
 const importing = ref(false);
@@ -215,11 +230,12 @@ watch(aiSelectedPoint, (p) => { if (p) aiNotes.value = p.notesContent || ''; });
 
 // ── 语料管理方法 ──────────────────────────────
 function payloadFromForm() { return { english: form.english, chinese: form.chinese, englishExplain: form.englishExplain, phonetic: form.phonetic, tags: form.tagsText.split(',').map(t => t.trim()).filter(Boolean), groupName: selectedGroup.value, sortOrder: form.sortOrder || undefined }; }
+function openFormModal(item) { if (item) editItem(item); else resetForm(); showFormModal.value = true; }
 function resetForm() { editingId.value = 0; form.english = ''; form.chinese = ''; form.englishExplain = ''; form.phonetic = ''; form.tagsText = ''; form.sortOrder = 0; }
 async function loadGroups() { const d = await api.classroomGroups(); groups.value = d.groups || []; }
 async function loadItems() { loading.value = true; error.value = ''; try { const d = await api.classroomCorpus(selectedGroup.value); items.value = d.items || []; } catch (err) { error.value = err.message; } finally { loading.value = false; } }
 async function loadAll() { await Promise.all([loadGroups(), loadItems()]); }
-async function saveForm() { error.value = ''; message.value = ''; try { if (editingId.value) { await api.updateClassroomItem(editingId.value, payloadFromForm()); message.value = '已保存'; } else { await api.createClassroomItem(payloadFromForm()); message.value = '已新增'; } resetForm(); await loadAll(); } catch (err) { error.value = err.message; } }
+async function saveForm() { error.value = ''; message.value = ''; try { if (editingId.value) { await api.updateClassroomItem(editingId.value, payloadFromForm()); message.value = '已保存'; } else { await api.createClassroomItem(payloadFromForm()); message.value = '已新增'; } showFormModal.value = false; resetForm(); await loadAll(); } catch (err) { error.value = err.message; } }
 function editItem(item) { editingId.value = item.id; selectedGroup.value = item.groupName; form.english = item.english; form.chinese = item.chinese || ''; form.englishExplain = item.englishExplain || ''; form.phonetic = item.phonetic || ''; form.tagsText = (item.tags || []).join(', '); form.sortOrder = item.sortOrder || 0; }
 async function deleteItem(item) { if (!confirm(`删除"${item.english}"？`)) return; error.value = ''; try { await api.deleteClassroomItem(item.id); message.value = '已删除'; if (editingId.value === item.id) resetForm(); await loadAll(); } catch (err) { error.value = err.message; } }
 async function invalidateGraph() { error.value = ''; try { await api.invalidateClassroomGraph(selectedGroup.value); message.value = '图谱缓存已清理'; } catch (err) { error.value = err.message; } }
