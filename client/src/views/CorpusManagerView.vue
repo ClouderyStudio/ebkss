@@ -170,7 +170,7 @@
 <script setup>
 import { Database, ListChecks, Network, Pencil, RefreshCw, Save, Sparkles, Trash2, Upload, X, Zap } from '@lucide/vue';
 import { onMounted, reactive, ref, watch } from 'vue';
-import { api } from '../api.js';
+import { api, API_BASE } from '../api.js';
 import AppShell from '../components/AppShell.vue';
 import { CLASSROOM_CONFIG } from '../config.js';
 

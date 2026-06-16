@@ -81,62 +81,80 @@
       <button class="icon-button" type="button" title="重新读取" aria-label="重新读取" @click="loadClassroom">
         <RefreshCw :size="20" />
       </button>
-
-      <label class="classroom-field">
-        <Languages :size="18" aria-hidden="true" />
-        <select v-model="mode">
-          <option v-for="option in modeOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
-        </select>
-      </label>
-
-      <label class="classroom-field">
-        <Volume2 :size="18" aria-hidden="true" />
-        <select v-model="voiceMode">
-          <option value="browser">本地朗读</option>
-          <option value="cloud">AI音频</option>
-        </select>
-      </label>
-
-      <label class="classroom-slider">
-        <Timer :size="18" aria-hidden="true" />
-        <input v-model.number="showDelaySeconds" type="range" min="1" max="5" step="0.5" />
-        <span>{{ showDelaySeconds }}s</span>
-      </label>
-
-      <label class="classroom-slider">
-        <Captions :size="18" aria-hidden="true" />
-        <input v-model.number="holdDelaySeconds" type="range" min="0.5" max="3" step="0.5" />
-        <span>{{ holdDelaySeconds }}s</span>
-      </label>
-
-      <label class="classroom-slider">
-        <Volume2 :size="18" aria-hidden="true" />
-        <input v-model.number="volume" type="range" min="0" max="1" step="0.05" />
-        <span>{{ Math.round(volume * 100) }}%</span>
-      </label>
-
-      <label class="classroom-slider">
-        <Gauge :size="18" aria-hidden="true" />
-        <input v-model.number="speed" type="range" min="0.5" max="1.5" step="0.1" />
-        <span>{{ speed.toFixed(1) }}</span>
-      </label>
-
-      <label class="toggle-field classroom-toggle">
-        <input v-model="autoNext" type="checkbox" />
-        <span>自动下一条</span>
-      </label>
-
-      <label class="toggle-field classroom-toggle">
-        <input v-model="showGraph" type="checkbox" />
-        <span>知识图谱</span>
-      </label>
-
+      <button class="icon-button" type="button" title="设置" aria-label="设置" @click="showSettings = true">
+        <Settings :size="20" />
+      </button>
       <button class="icon-button" type="button" title="全屏" aria-label="全屏" @click="toggleFullscreen">
         <Maximize :size="20" />
       </button>
     </footer>
+
+    <!-- 设置弹窗 -->
+    <Teleport to="body">
+      <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
+        <div class="modal-panel settings-modal">
+          <div class="modal-header">
+            <h2>课堂设置</h2>
+            <button class="icon-button" type="button" @click="showSettings = false">
+              <X :size="20" />
+            </button>
+          </div>
+          <div class="modal-body">
+            <label class="settings-row">
+              <span>展示模式</span>
+              <select v-model="mode">
+                <option v-for="option in modeOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label class="settings-row">
+              <span>朗读方式</span>
+              <select v-model="voiceMode">
+                <option value="browser">本地朗读</option>
+                <option value="cloud">AI 音频</option>
+              </select>
+            </label>
+            <label class="settings-row">
+              <span>显示答案延迟</span>
+              <div class="settings-range">
+                <input v-model.number="showDelaySeconds" type="range" min="1" max="5" step="0.5" />
+                <code>{{ showDelaySeconds }}s</code>
+              </div>
+            </label>
+            <label class="settings-row">
+              <span>答案停留时间</span>
+              <div class="settings-range">
+                <input v-model.number="holdDelaySeconds" type="range" min="0.5" max="3" step="0.5" />
+                <code>{{ holdDelaySeconds }}s</code>
+              </div>
+            </label>
+            <label class="settings-row">
+              <span>音量</span>
+              <div class="settings-range">
+                <input v-model.number="volume" type="range" min="0" max="1" step="0.05" />
+                <code>{{ Math.round(volume * 100) }}%</code>
+              </div>
+            </label>
+            <label class="settings-row">
+              <span>语速</span>
+              <div class="settings-range">
+                <input v-model.number="speed" type="range" min="0.5" max="1.5" step="0.1" />
+                <code>{{ speed.toFixed(1) }}</code>
+              </div>
+            </label>
+            <label class="settings-row">
+              <span>自动下一条</span>
+              <input v-model="autoNext" type="checkbox" />
+            </label>
+            <label class="settings-row">
+              <span>显示知识图谱</span>
+              <input v-model="showGraph" type="checkbox" />
+            </label>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -153,6 +171,7 @@ import {
   Pause,
   Play,
   RefreshCw,
+  Settings,
   SkipBack,
   SkipForward,
   Timer,
@@ -181,6 +200,7 @@ const isRunning = ref(false);
 const loading = ref(false);
 const error = ref('');
 const showGraph = ref(true);
+const showSettings = ref(false);
 const audioError = ref('');
 const autoNext = ref(true);
 const voiceMode = ref(CLASSROOM_CONFIG.defaultVoiceMode);
