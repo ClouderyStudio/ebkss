@@ -33,6 +33,9 @@
             <button class="secondary-button" type="button" @click="invalidateGraph">
               <Network :size="18" /> <span>重建图谱</span>
             </button>
+            <button class="secondary-button danger-button" type="button" :disabled="!selectedGroup" @click="deleteGroup">
+              <Trash2 :size="18" /> <span>删除语料组</span>
+            </button>
           </div>
 
           <!-- 一键导入 -->
@@ -131,12 +134,40 @@
               <Network :size="19" /> <span>{{ aiGraphLoading ? '生成中...' : '知识图谱' }}</span>
             </button>
           </div>
+          <!-- AI 输出可视化 -->
+          <div v-if="aiOutput" class="ai-output">
+            <div class="section-title"><Eye :size="18" /><h3>AI 输出</h3></div>
+            <pre class="ai-output-text">{{ aiOutput }}</pre>
+          </div>
           <div v-if="aiMessage" class="notice">{{ aiMessage }}</div>
           <div v-if="aiError" class="notice error">{{ aiError }}</div>
         </div>
 
+        <!-- 已有题目 -->
         <section class="draft-panel">
-          <div class="section-title"><ListChecks :size="20" /><h2>题目草稿</h2></div>
+          <div class="section-title">
+            <Database :size="20" />
+            <h2>已有题目 · {{ selectedPoint?.name || '' }}</h2>
+            <button class="secondary-button small-button" :disabled="aiLoadingExisting" @click="loadExistingQuestions">
+              <RefreshCw :size="16" /> {{ aiLoadingExisting ? '加载中...' : '刷新' }}
+            </button>
+          </div>
+          <div v-if="aiExistingQuestions.length === 0 && !aiLoadingExisting" class="notice">暂无语料</div>
+          <article v-for="(q, idx) in aiExistingQuestions" :key="q.id || idx" class="question-card">
+            <div class="question-card-header">
+              <QuestionTypeBadge :type="q.questionType || q.question_type" />
+              <span>#{{ q.id }}</span>
+              <button class="icon-button small-button danger-button" title="删除" @click="deleteExistingQuestion(q)"><Trash2 :size="14" /></button>
+            </div>
+            <p class="question-text">{{ q.questionText || q.question_text }}</p>
+            <div class="tag-line">
+              <span v-for="a in (q.acceptableAnswers || [])" :key="a" class="type-badge answer-badge">{{ a }}</span>
+            </div>
+          </article>
+        </section>
+
+        <section class="draft-panel">
+          <div class="section-title"><ListChecks :size="20" /><h2>AI 生成草稿</h2></div>
           <article v-for="(draft, index) in aiDrafts" :key="index" class="question-card">
             <div class="question-card-header">
               <QuestionTypeBadge :type="draft.questionType" />
@@ -186,7 +217,7 @@
 
 <script setup>
 // ── 语料管理 ───────────────────────────────────
-import { Database, ListChecks, Network, Pencil, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, WandSparkles, X, Zap } from '@lucide/vue';
+import { Database, Eye, ListChecks, Network, Pencil, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, WandSparkles, X, Zap } from '@lucide/vue';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { api, API_BASE } from '../api.js';
 import AppShell from '../components/AppShell.vue';
@@ -224,9 +255,12 @@ const aiGenerating = ref(false);
 const aiGraphLoading = ref(false);
 const aiMessage = ref('');
 const aiError = ref('');
+const aiOutput = ref('');
+const aiExistingQuestions = ref([]);
+const aiLoadingExisting = ref(false);
 
 const aiSelectedPoint = computed(() => store.allGrammarPoints.find(p => p.id === aiGrammarPointId.value));
-watch(aiSelectedPoint, (p) => { if (p) aiNotes.value = p.notesContent || ''; });
+watch(aiSelectedPoint, (p) => { if (p) { aiNotes.value = p.notesContent || ''; loadExistingQuestions(); } });
 
 // ── 语料管理方法 ──────────────────────────────
 function payloadFromForm() { return { english: form.english, chinese: form.chinese, englishExplain: form.englishExplain, phonetic: form.phonetic, tags: form.tagsText.split(',').map(t => t.trim()).filter(Boolean), groupName: selectedGroup.value, sortOrder: form.sortOrder || undefined }; }
@@ -239,6 +273,7 @@ async function saveForm() { error.value = ''; message.value = ''; try { if (edit
 function editItem(item) { editingId.value = item.id; selectedGroup.value = item.groupName; form.english = item.english; form.chinese = item.chinese || ''; form.englishExplain = item.englishExplain || ''; form.phonetic = item.phonetic || ''; form.tagsText = (item.tags || []).join(', '); form.sortOrder = item.sortOrder || 0; }
 async function deleteItem(item) { if (!confirm(`删除"${item.english}"？`)) return; error.value = ''; try { await api.deleteClassroomItem(item.id); message.value = '已删除'; if (editingId.value === item.id) resetForm(); await loadAll(); } catch (err) { error.value = err.message; } }
 async function invalidateGraph() { error.value = ''; try { await api.invalidateClassroomGraph(selectedGroup.value); message.value = '图谱缓存已清理'; } catch (err) { error.value = err.message; } }
+async function deleteGroup() { if (!confirm(`确定删除语料组"${selectedGroup.value}"及其所有条目？此操作不可恢复。`)) return; error.value = ''; try { const r = await api.deleteClassroomGroup(selectedGroup.value); message.value = `已删除语料组"${r.groupName}"（${r.count} 条）`; selectedGroup.value = CLASSROOM_CONFIG.defaultGroup; await loadAll(); } catch (err) { error.value = err.message; } }
 
 // 导入
 function onFileChange(event) { selectedFile.value = event.target.files?.[0] || null; importResult.value = null; error.value = ''; }
@@ -248,7 +283,9 @@ async function importWithSSE() { const buffer = await selectedFile.value.arrayBu
 watch(selectedGroup, () => { resetForm(); loadItems(); });
 
 // ── AI 出题方法 ────────────────────────────────
-async function generateQuestions() { aiGenerating.value = true; aiError.value = ''; try { const d = await api.generate({ grammarPointId: aiGrammarPointId.value, notesContent: aiNotes.value, count: aiCount.value }); aiDrafts.value = (d.questions || []).map(q => ({ ...q, answerText: q.acceptableAnswers.join('\n') })); } catch (err) { aiError.value = err.message; } finally { aiGenerating.value = false; } }
+async function generateQuestions() { aiGenerating.value = true; aiError.value = ''; aiOutput.value = ''; try { const d = await api.generate({ grammarPointId: aiGrammarPointId.value, notesContent: aiNotes.value, count: aiCount.value }); aiOutput.value = JSON.stringify(d.questions, null, 2); aiDrafts.value = (d.questions || []).map(q => ({ ...q, answerText: q.acceptableAnswers.join('\n') })); aiMessage.value = `生成了 ${aiDrafts.value.length} 道题目`; } catch (err) { aiError.value = err.message; } finally { aiGenerating.value = false; } }
+async function loadExistingQuestions() { aiLoadingExisting.value = true; try { const d = await api.quiz(aiGrammarPointId.value, { count: 50, mode: 'teacher' }); aiExistingQuestions.value = d.questions || []; } catch (err) { aiError.value = err.message; } finally { aiLoadingExisting.value = false; } }
+async function deleteExistingQuestion(q) { if (!confirm(`删除题目 #${q.id}？`)) return; try { await api.deleteClassroomItem(q.id); aiExistingQuestions.value = aiExistingQuestions.value.filter(item => item.id !== q.id); aiMessage.value = '已删除'; } catch (err) { aiError.value = err.message; } }
 async function saveAiDrafts() { aiError.value = ''; try { const r = await api.saveCorpus({ grammarPointId: aiGrammarPointId.value, questions: aiDrafts.value.map(d => ({ questionType: d.questionType, questionText: d.questionText, acceptableAnswers: d.answerText.split('\n').map(a => a.trim()).filter(Boolean), template: d.template, matchRule: d.matchRule || 'exact', difficulty: d.difficulty || 1, requiresAi: d.questionType === 'analogy' })) }); aiDrafts.value = []; aiMessage.value = `已保存 ${r.insertedCount} 道题`; } catch (err) { aiError.value = err.message; } }
 async function loadAiGraph() { aiGraphLoading.value = true; aiError.value = ''; try { const d = await api.graph(aiGrammarPointId.value); aiGraph.value = d.graph; aiMessage.value = d.cached ? '缓存图谱' : '新图谱'; } catch (err) { aiError.value = err.message; } finally { aiGraphLoading.value = false; } }
 

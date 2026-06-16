@@ -42,9 +42,12 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   deleteClassroomItem: (id) =>
-    request(`/api/corpus/${id}`, {
-      method: 'DELETE'
-    }),
+    request(`/api/corpus/${id}`, { method: 'DELETE' }),
+  /**
+   * 删除整个语料组
+   */
+  deleteClassroomGroup: (groupName) =>
+    request(`/api/corpus/group/${encodeURIComponent(groupName)}`, { method: 'DELETE' }),
   invalidateClassroomGraph: (group = 'class-notes') =>
     request(`/api/graph?group=${encodeURIComponent(group)}`, {
       method: 'DELETE'

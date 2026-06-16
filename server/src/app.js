@@ -142,6 +142,24 @@ export function createApp() {
     }
   });
 
+  // 删除整个语料组及其所有条目
+  app.delete('/api/corpus/group/:groupName', async (req, res, next) => {
+    try {
+      const { groupName } = z.object({ groupName: z.string().trim().min(1) }).parse(req.params);
+      const result = await query('SELECT COUNT(*) AS count FROM classroom_corpus WHERE group_name = ?', [groupName]);
+      const count = Number(result[0]?.count || 0);
+      if (count === 0) {
+        res.status(404).json({ error: `语料组 "${groupName}" 不存在` });
+        return;
+      }
+      await query('DELETE FROM classroom_corpus WHERE group_name = ?', [groupName]);
+      await query('DELETE FROM classroom_knowledge_graphs WHERE group_name = ?', [groupName]);
+      res.json({ deleted: true, groupName, count });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.delete('/api/corpus/:id', async (req, res, next) => {
     try {
       const params = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
