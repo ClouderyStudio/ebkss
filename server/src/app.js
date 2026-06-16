@@ -3,7 +3,8 @@ import express from 'express';
 import { z } from 'zod';
 import { pingDatabase, query } from './db.js';
 import { config } from './config.js';
-import { generateQuestions } from './services/aiService.js';
+import { generateQuestions, parseEnglishNotes } from './services/aiService.js';
+import { signToken, verifyToken, requireAuth as _requireAuth } from './services/authService.js';
 import {
   createClassroomCorpusItem,
   deleteClassroomCorpusItem,
@@ -18,7 +19,6 @@ import { getQuiz, getUnits, saveGeneratedQuestions, submitQuiz } from './service
 import { getOrCreateSpeech } from './services/ttsService.js';
 import { parseDocx } from './utils/docxParser.js';
 import { parseNotesLines } from './utils/notesParser.js';
-import { parseEnglishNotes } from './services/aiService.js';
 
 export function createApp() {
   const app = express();
@@ -31,6 +31,34 @@ export function createApp() {
   }
   app.use(express.json({ limit: '1mb' }));
   app.use('/audio/cache', express.static(config.tts.cachePath));
+
+  // ── 认证 ───────────────────────────────────────────
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { password } = z.object({ password: z.string().min(1) }).parse(req.body);
+      const expectedPassword = process.env.ADMIN_PASSWORD || 'ebkss2026';
+
+      if (password !== expectedPassword) {
+        res.status(401).json({ error: '密码错误' });
+        return;
+      }
+
+      res.json({ token: signToken() });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: 'Invalid request', details: error.flatten() });
+        return;
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/auth/verify', async (req, res) => {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const payload = verifyToken(token);
+    res.json({ valid: !!payload });
+  });
 
   app.get('/api/health', async (_req, res) => {
     const database = await pingDatabase();
@@ -157,6 +185,100 @@ export function createApp() {
     try {
       const { file, groupName, mode } = importWordSchema.parse(req.body);
       res.json(await processImport(file, groupName, mode));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // SSE 实时推送导入进度
+  app.post('/api/corpus/import-word/stream', async (req, res, next) => {
+    try {
+      const { file, groupName } = importWordSchema.parse(req.body);
+
+      // SSE headers
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      const send = (data) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      };
+
+      try {
+        // 1. 解析 docx
+        send({ status: 'parsing', message: '正在解析 Word 文件...' });
+        const fileBuffer = Buffer.from(file, 'base64');
+        const lines = await parseDocx(fileBuffer);
+
+        if (lines.length === 0) {
+          send({ status: 'error', message: 'Word 文件内容为空' });
+          res.end();
+          return;
+        }
+
+        send({ status: 'parsed', message: `已提取 ${lines.length} 行文本`, lines });
+
+        // 2. AI 逐块解析 + 实时推送
+        send({ status: 'ai_start', message: 'AI 正在解析笔记内容...' });
+
+        const allLines = lines.filter(Boolean);
+        const chunkSize = 20;
+        const allEntries = [];
+
+        for (let i = 0; i < allLines.length; i += chunkSize) {
+          const chunkLines = allLines.slice(i, i + chunkSize);
+          const chunk = chunkLines.join('\n');
+
+          send({
+            status: 'ai_chunk',
+            message: `正在处理第 ${i + 1}-${Math.min(i + chunkSize, allLines.length)} 行...`,
+            chunk: chunk.slice(0, 200)
+          });
+
+          try {
+            const entries = await parseEnglishNotes(chunk, groupName);
+            allEntries.push(...entries);
+            send({
+              status: 'ai_progress',
+              message: `已提取 ${allEntries.length} 条`,
+              total: allEntries.length
+            });
+          } catch (err) {
+            send({ status: 'ai_chunk_error', message: `块解析错误: ${err.message}` });
+          }
+        }
+
+        // 3. 批量入库
+        send({ status: 'saving', message: `正在保存 ${allEntries.length} 条语料...` });
+        const created = [];
+        for (const entry of allEntries) {
+          const item = await createClassroomCorpusItem({
+            english: entry.english,
+            chinese: entry.chinese || '',
+            englishExplain: entry.englishExplain || '',
+            phonetic: entry.phonetic || '',
+            tags: entry.tags || [],
+            groupName,
+            sourceKey: `word-import-ai-${Date.now()}-${entry.english.slice(0, 20)}`
+          });
+          created.push(item);
+        }
+
+        await invalidateClassroomGraph(groupName);
+
+        send({
+          status: 'done',
+          message: `完成！共导入 ${created.length} 条语料`,
+          imported: created.length,
+          groupName,
+          items: created.slice(0, 5)
+        });
+      } catch (err) {
+        send({ status: 'error', message: err.message });
+      }
+
+      res.end();
     } catch (error) {
       next(error);
     }

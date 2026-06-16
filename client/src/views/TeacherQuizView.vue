@@ -49,11 +49,14 @@
         <div v-else class="classroom-message">暂无语料</div>
       </section>
 
-      <aside class="classroom-graph">
+      <aside v-if="showGraph" class="classroom-graph">
         <div class="classroom-graph-header">
           <Network :size="20" aria-hidden="true" />
           <span>知识图谱</span>
           <small>{{ graphCached ? '缓存' : '生成' }}</small>
+          <button class="icon-button small-button" type="button" title="关闭图谱" @click="showGraph = false">
+            <X :size="16" />
+          </button>
         </div>
         <GraphPanel v-if="graph" :graph="graph" :active-node-id="activeNodeId" />
         <div v-else class="classroom-message compact">正在准备图谱...</div>
@@ -125,6 +128,11 @@
         <span>自动下一条</span>
       </label>
 
+      <label class="toggle-field classroom-toggle">
+        <input v-model="showGraph" type="checkbox" />
+        <span>知识图谱</span>
+      </label>
+
       <button class="icon-button" type="button" title="全屏" aria-label="全屏" @click="toggleFullscreen">
         <Maximize :size="20" />
       </button>
@@ -148,7 +156,8 @@ import {
   SkipBack,
   SkipForward,
   Timer,
-  Volume2
+  Volume2,
+  X
 } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { api } from '../api.js';
@@ -171,6 +180,7 @@ const answerVisible = ref(false);
 const isRunning = ref(false);
 const loading = ref(false);
 const error = ref('');
+const showGraph = ref(true);
 const audioError = ref('');
 const autoNext = ref(true);
 const voiceMode = ref(CLASSROOM_CONFIG.defaultVoiceMode);

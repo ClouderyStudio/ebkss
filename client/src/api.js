@@ -1,5 +1,13 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
+function getToken() {
+  return localStorage.getItem('ebkss_token') || '';
+}
+
+function saveToken(token) {
+  localStorage.setItem('ebkss_token', token);
+}
+
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
@@ -91,5 +99,20 @@ export const api = {
       body: JSON.stringify({ file: base64, groupName, mode })
     });
   },
-  graph: (grammarPointId) => request(`/api/graph/${grammarPointId}`)
+  graph: (grammarPointId) => request(`/api/graph/${grammarPointId}`),
+
+  // ── 认证 ──────────────────────────────────────
+  auth: {
+    login: async (password) => {
+      const data = await request('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ password })
+      });
+      if (data.token) saveToken(data.token);
+      return data;
+    },
+    verify: () => request('/api/auth/verify', { headers: { Authorization: `Bearer ${getToken()}` } }),
+    getToken,
+    logout: () => localStorage.removeItem('ebkss_token')
+  }
 };

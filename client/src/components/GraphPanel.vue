@@ -96,8 +96,25 @@ onMounted(() => {
   window.addEventListener('resize', resize);
 });
 
-watch(() => props.graph, render, { deep: true });
-watch(() => props.activeNodeId, render);
+watch(() => props.graph, () => {
+  render();
+  focusActive();
+}, { deep: true });
+
+watch(() => props.activeNodeId, () => {
+  render();
+  focusActive();
+});
+
+function focusActive() {
+  if (!chart || !props.activeNodeId) return;
+  // ECharts 动画聚焦到当前节点
+  chart.dispatchAction({
+    type: 'focusNodeAdjacency',
+    seriesIndex: 0,
+    dataIndex: props.graph?.nodes?.findIndex(n => n.id === props.activeNodeId) ?? -1
+  });
+}
 
 function resize() {
   chart?.resize();

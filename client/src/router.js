@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: '/login', name: 'login', component: () => import('./views/LoginView.vue') },
     { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
     { path: '/teacher/quiz', name: 'teacher-quiz', component: () => import('./views/TeacherQuizView.vue') },
     { path: '/class', name: 'classroom', component: () => import('./views/TeacherQuizView.vue') },

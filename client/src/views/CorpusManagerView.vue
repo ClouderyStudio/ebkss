@@ -59,6 +59,18 @@
               </button>
             </div>
           </div>
+          <!-- SSE 实时进度 -->
+          <div v-if="sseMessages.length > 0" class="sse-log">
+            <div v-for="(msg, idx) in sseMessages" :key="idx" :class="['sse-line', `sse-${msg.status}`]">
+              <span v-if="msg.status === 'parsing'">📄 </span>
+              <span v-else-if="msg.status === 'ai_start'">🤖 </span>
+              <span v-else-if="msg.status === 'ai_progress'">📊 </span>
+              <span v-else-if="msg.status === 'saving'">💾 </span>
+              <span v-else-if="msg.status === 'done'">✅ </span>
+              <span v-else-if="msg.status === 'error'">❌ </span>
+              {{ msg.message }}
+            </div>
+          </div>
           <div v-if="importResult" class="import-result notice">
             <span v-if="importResult.mode === 'ai'">🤖 </span>
             成功导入 {{ importResult.imported }} 条语料到组 "{{ importResult.groupName }}"
@@ -176,6 +188,7 @@ const selectedFile = ref(null);
 const importing = ref(false);
 const importMode = ref(null);
 const importResult = ref(null);
+const sseMessages = ref([]);
 const form = reactive({
   english: '',
   chinese: '',
@@ -306,22 +319,68 @@ async function importWordFile(mode) {
   error.value = '';
   importResult.value = null;
   message.value = '';
+  sseMessages.value = [];
 
   try {
-    const result = await api.importWord(selectedFile.value, selectedGroup.value, mode);
-    importResult.value = result;
-    const prefix = mode === 'ai' ? '🤖 AI 增强解析' : '⚡ 规则解析';
-    message.value = `${prefix}完成：成功导入 ${result.imported} 条语料到 "${result.groupName}"`;
-    selectedFile.value = null;
-    if (fileInput.value) {
-      fileInput.value.value = '';
+    if (mode === 'ai') {
+      // AI 模式使用 SSE 实时流式
+      await importWithSSE();
+    } else {
+      const result = await api.importWord(selectedFile.value, selectedGroup.value, mode);
+      importResult.value = result;
+      message.value = `⚡ 规则解析完成：成功导入 ${result.imported} 条语料到 "${result.groupName}"`;
     }
+    selectedFile.value = null;
+    if (fileInput.value) fileInput.value.value = '';
     await loadAll();
   } catch (err) {
     error.value = err.message;
   } finally {
     importing.value = false;
     importMode.value = null;
+  }
+}
+
+async function importWithSSE() {
+  const buffer = await selectedFile.value.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  const base64 = btoa(binary);
+
+  const resp = await fetch(`${API_BASE}/api/corpus/import-word/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: base64, groupName: selectedGroup.value })
+  });
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer2 = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer2 += decoder.decode(value, { stream: true });
+    const lines = buffer2.split('\n');
+    buffer2 = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('data: ')) {
+        try {
+          const msg = JSON.parse(trimmed.slice(6));
+          sseMessages.value = [...sseMessages.value, msg];
+          if (msg.status === 'done') {
+            importResult.value = msg;
+            message.value = `🤖 AI 增强解析完成：成功导入 ${msg.imported} 条语料到 "${msg.groupName}"`;
+          } else if (msg.status === 'error') {
+            error.value = msg.message;
+          }
+        } catch { /* ignore parse errors */ }
+      }
+    }
   }
 }
 
