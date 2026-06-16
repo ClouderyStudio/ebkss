@@ -57,11 +57,11 @@ async function handleLogin() {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: var(--bg, #0f172a);
+  background: linear-gradient(135deg, #e0f2fe 0%, #f0fdf4 50%, #fefce8 100%);
 }
 .login-card {
-  background: var(--card-bg, #1e293b);
-  border: 1px solid var(--border, #334155);
+  background: #fff;
+  border: 1px solid #e2e8f0;
   border-radius: 16px;
   padding: 2.5rem;
   width: 100%;
@@ -69,6 +69,7 @@ async function handleLogin() {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.06);
 }
 .login-title {
   text-align: center;
@@ -76,23 +77,24 @@ async function handleLogin() {
 .login-title h1 {
   margin: 0.5rem 0 0.25rem;
   font-size: 1.5rem;
-  color: var(--text, #f1f5f9);
+  color: #1e293b;
 }
 .login-title p {
-  color: var(--text-secondary, #94a3b8);
+  color: #64748b;
   margin: 0;
 }
 .field input {
   width: 100%;
   padding: 0.75rem 1rem;
   font-size: 1rem;
-  border: 1px solid var(--border, #334155);
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
-  background: var(--input-bg, #0f172a);
-  color: var(--text, #f1f5f9);
+  background: #f8fafc;
+  color: #1e293b;
 }
 .field input:focus {
-  outline: 2px solid var(--accent, #3b82f6);
+  border-color: #3b82f6;
+  outline: 2px solid #bfdbfe;
   outline-offset: -1px;
 }
 </style>

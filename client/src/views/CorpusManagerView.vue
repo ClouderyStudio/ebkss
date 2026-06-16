@@ -40,22 +40,22 @@
             </label>
             <div class="import-buttons">
               <button
-                class="primary-button"
+                class="secondary-button"
                 type="button"
                 :disabled="!selectedFile || importing"
                 @click="importWordFile('rule')"
               >
                 <Zap :size="18" aria-hidden="true" />
-                <span>{{ importing && importMode === 'rule' ? '解析中...' : '⚡ 规则解析导入' }}</span>
+                <span>{{ importing && importMode === 'rule' ? '解析中...' : '⚡ 规则解析' }}</span>
               </button>
               <button
-                class="secondary-button"
+                class="primary-button"
                 type="button"
                 :disabled="!selectedFile || importing"
                 @click="importWordFile('ai')"
               >
                 <Sparkles :size="18" aria-hidden="true" />
-                <span>{{ importing && importMode === 'ai' ? 'AI解析中(约2分钟)...' : '✨ AI增强解析导入' }}</span>
+                <span>{{ importing && importMode === 'ai' ? 'AI解析中...' : '✨ AI 增强解析' }}</span>
               </button>
             </div>
           </div>

@@ -36,9 +36,24 @@ export function createApp() {
   app.post('/api/auth/login', async (req, res) => {
     try {
       const { password } = z.object({ password: z.string().min(1) }).parse(req.body);
-      const expectedPassword = process.env.ADMIN_PASSWORD || 'ebkss2026';
+      const crypto = await import('node:crypto');
 
-      if (password !== expectedPassword) {
+      // 优先从数据库读取密码（settings 表），否则用环境变量
+      let expectedHash;
+      try {
+        const [row] = await query("SELECT value FROM settings WHERE `key` = 'admin_password_hash'");
+        if (row) expectedHash = row.value;
+      } catch { /* 表可能不存在 */ }
+
+      if (!expectedHash) {
+        // fallback: 环境变量或默认密码
+        const plainPassword = process.env.ADMIN_PASSWORD || 'ebkss2026';
+        expectedHash = crypto.createHash('sha256').update(plainPassword).digest('hex');
+      }
+
+      const inputHash = crypto.createHash('sha256').update(password).digest('hex');
+
+      if (inputHash !== expectedHash) {
         res.status(401).json({ error: '密码错误' });
         return;
       }
@@ -191,97 +206,101 @@ export function createApp() {
   });
 
   // SSE 实时推送导入进度
-  app.post('/api/corpus/import-word/stream', async (req, res, next) => {
+  app.post('/api/corpus/import-word/stream', async (req, res) => {
+    // SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // 禁用 nginx 缓冲
+    res.flushHeaders();
+
+    const send = (data) => {
+      try {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      } catch {
+        // 连接已关闭
+      }
+    };
+
     try {
       const { file, groupName } = importWordSchema.parse(req.body);
 
-      // SSE headers
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.flushHeaders();
+      // 1. 解析 docx
+      send({ status: 'parsing', message: '正在解析 Word 文件...' });
+      const fileBuffer = Buffer.from(file, 'base64');
+      const lines = await parseDocx(fileBuffer);
 
-      const send = (data) => {
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-      };
-
-      try {
-        // 1. 解析 docx
-        send({ status: 'parsing', message: '正在解析 Word 文件...' });
-        const fileBuffer = Buffer.from(file, 'base64');
-        const lines = await parseDocx(fileBuffer);
-
-        if (lines.length === 0) {
-          send({ status: 'error', message: 'Word 文件内容为空' });
-          res.end();
-          return;
-        }
-
-        send({ status: 'parsed', message: `已提取 ${lines.length} 行文本`, lines });
-
-        // 2. AI 逐块解析 + 实时推送
-        send({ status: 'ai_start', message: 'AI 正在解析笔记内容...' });
-
-        const allLines = lines.filter(Boolean);
-        const chunkSize = 20;
-        const allEntries = [];
-
-        for (let i = 0; i < allLines.length; i += chunkSize) {
-          const chunkLines = allLines.slice(i, i + chunkSize);
-          const chunk = chunkLines.join('\n');
-
-          send({
-            status: 'ai_chunk',
-            message: `正在处理第 ${i + 1}-${Math.min(i + chunkSize, allLines.length)} 行...`,
-            chunk: chunk.slice(0, 200)
-          });
-
-          try {
-            const entries = await parseEnglishNotes(chunk, groupName);
-            allEntries.push(...entries);
-            send({
-              status: 'ai_progress',
-              message: `已提取 ${allEntries.length} 条`,
-              total: allEntries.length
-            });
-          } catch (err) {
-            send({ status: 'ai_chunk_error', message: `块解析错误: ${err.message}` });
-          }
-        }
-
-        // 3. 批量入库
-        send({ status: 'saving', message: `正在保存 ${allEntries.length} 条语料...` });
-        const created = [];
-        for (const entry of allEntries) {
-          const item = await createClassroomCorpusItem({
-            english: entry.english,
-            chinese: entry.chinese || '',
-            englishExplain: entry.englishExplain || '',
-            phonetic: entry.phonetic || '',
-            tags: entry.tags || [],
-            groupName,
-            sourceKey: `word-import-ai-${Date.now()}-${entry.english.slice(0, 20)}`
-          });
-          created.push(item);
-        }
-
-        await invalidateClassroomGraph(groupName);
-
-        send({
-          status: 'done',
-          message: `完成！共导入 ${created.length} 条语料`,
-          imported: created.length,
-          groupName,
-          items: created.slice(0, 5)
-        });
-      } catch (err) {
-        send({ status: 'error', message: err.message });
+      if (lines.length === 0) {
+        send({ status: 'error', message: 'Word 文件内容为空' });
+        res.end();
+        return;
       }
 
-      res.end();
-    } catch (error) {
-      next(error);
+      send({ status: 'parsed', message: `已提取 ${lines.length} 行文本` });
+
+      // 2. AI 逐块解析 + 实时推送
+      const allLines = lines.filter(Boolean);
+      const chunkSize = 20;
+      const allEntries = [];
+
+      for (let i = 0; i < allLines.length; i += chunkSize) {
+        const chunkLines = allLines.slice(i, i + chunkSize);
+        const chunk = chunkLines.join('\n');
+
+        send({
+          status: 'ai_chunk',
+          message: `AI 解析第 ${i + 1}-${Math.min(i + chunkSize, allLines.length)} 行...`,
+          progress: `${i + 1}/${allLines.length}`
+        });
+
+        try {
+          const entries = await parseEnglishNotes(chunk, groupName);
+          allEntries.push(...entries);
+          send({
+            status: 'ai_progress',
+            message: `已提取 ${allEntries.length} 条`,
+            total: allEntries.length
+          });
+        } catch (err) {
+          send({ status: 'ai_chunk_error', message: err.message });
+        }
+      }
+
+      if (allEntries.length === 0) {
+        send({ status: 'error', message: 'AI 未能提取有效条目' });
+        res.end();
+        return;
+      }
+
+      // 3. 批量入库
+      send({ status: 'saving', message: `正在保存 ${allEntries.length} 条语料...` });
+      const created = [];
+      for (const entry of allEntries) {
+        const item = await createClassroomCorpusItem({
+          english: entry.english,
+          chinese: entry.chinese || '',
+          englishExplain: entry.englishExplain || '',
+          phonetic: entry.phonetic || '',
+          tags: entry.tags || [],
+          groupName,
+          sourceKey: `word-import-ssestream-${Date.now()}-${entry.english.slice(0, 20)}`
+        });
+        created.push(item);
+      }
+
+      await invalidateClassroomGraph(groupName);
+
+      send({
+        status: 'done',
+        message: `完成！共导入 ${created.length} 条语料`,
+        imported: created.length,
+        groupName
+      });
+    } catch (err) {
+      send({ status: 'error', message: err.message || '导入失败' });
     }
+
+    res.end();
   });
 
   app.delete('/api/graph', async (req, res, next) => {

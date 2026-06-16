@@ -6,8 +6,8 @@ export const QUIZ_CONFIG = {
   fullscreen: true,
   fontSize: 48,
   answerFontSize: 36,
-  backgroundColor: '#1a1a2e',
-  accentColor: '#ff6b6b'
+  backgroundColor: '#f0f9ff',
+  accentColor: '#2563eb'
 };
 
 export const CLASSROOM_CONFIG = {
@@ -20,6 +20,6 @@ export const CLASSROOM_CONFIG = {
   defaultTtsVolume: 0.8,
   minTtsSpeed: 0.5,
   maxTtsSpeed: 1.5,
-  backgroundColor: '#111827',
-  accentColor: '#f59e0b'
+  backgroundColor: '#f8fafc',
+  accentColor: '#2563eb'
 };

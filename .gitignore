@@ -8,3 +8,17 @@ npm-debug.log*
 .codex-*.log
 .DS_Store
 Thumbs.db
+tmp/
+logs/
+*.log
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*.bak
+*.tmp
+*.pid
+*.seed
+*.pid.lock
