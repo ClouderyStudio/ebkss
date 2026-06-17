@@ -386,7 +386,8 @@ export async function parseEnglishNotes(notesText, groupName) {
         {
           role: 'system',
           content: `You are an English vocabulary note parser. Extract vocabulary items and return a JSON object with an "entries" array.
-Each entry: { "english": "word or phrase", "chinese": "Chinese meaning", "englishExplain": "English explanation", "phonetic": "pronunciation if available", "tags": ["vocabulary"|"phrase"|"grammar"|"sentence"] }`
+Each entry MUST include: "english" (word/phrase), "chinese" (Chinese meaning), "phonetic" (IPA pronunciation like /ɡɪv ʌp/ — ALWAYS generate phonetics for every English word), "tags" (array of "vocabulary"|"phrase"|"grammar"|"sentence").
+Optional: "englishExplain" (short English explanation).`
         },
         {
           role: 'user',

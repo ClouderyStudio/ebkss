@@ -1,46 +1,181 @@
 # 英语基础知识学习系统
 
-课堂 5 分钟英语基础知识快速检测系统原型，包含课堂快闪投屏、TTS 朗读、知识图谱、学生在线练习、AI 出题和 AI 评分。
+课堂英语教学综合平台，集课堂快闪投屏、TTS 朗读、知识图谱、学生练习、AI 出题评分、语料管理于一体。
+
+---
+
+## 架构
+
+```
+ebkss/
+├── client/              # Vue 3 + Vite 前端
+│   ├── src/
+│   │   ├── views/       # 页面组件
+│   │   │   ├── HomeView.vue          # 首页
+│   │   │   ├── TeacherQuizView.vue   # 课堂快闪 + 学生练习
+│   │   │   ├── StudentQuizView.vue   # 学生答题
+│   │   │   ├── AdminView.vue         # 管理工具（语料管理 + AI出题）
+│   │   │   └── LoginView.vue         # 管理员登录
+│   │   ├── components/  # 通用组件
+│   │   ├── api.js       # API 客户端
+│   │   └── config.js    # 前端配置
+│   └── public/favicon.svg
+├── server/              # Node.js + Express 后端
+│   ├── src/
+│   │   ├── app.js       # 路由 + 中间件
+│   │   ├── index.js     # 入口（内置前端静态文件）
+│   │   ├── config.js    # 环境变量配置
+│   │   ├── services/    # 业务逻辑
+│   │   │   ├── aiService.js        # AI 出题/评分/笔记解析
+│   │   │   ├── authService.js      # JWT 认证
+│   │   │   ├── classroomService.js # 课堂语料/图谱
+│   │   │   ├── quizService.js      # 出题/评卷
+│   │   │   ├── ttsService.js       # DashScope TTS
+│   │   │   └── graphService.js     # 知识图谱
+│   │   ├── utils/       # 工具
+│   │   ├── data/        # 种子数据
+│   │   └── scripts/     # 脚本（迁移/种子/预缓存/doxc解析）
+│   └── tests/
+└── scripts/             # 开发辅助脚本
+```
+
+---
+
+## 技术栈
+
+| 层 | 技术 |
+|---|------|
+| 前端 | Vue 3 + Vite + Pinia + ECharts + lucide-vue |
+| 后端 | Node.js (Express) + Zod |
+| 数据库 | MySQL 8.0 |
+| AI LLM | 硅基流动 DeepSeek-V4-Flash / V3 / Qwen3-32B |
+| TTS | 阿里云 DashScope qwen3-tts-vd-2026-01-26（声音设计模型） |
+
+---
+
+## 功能矩阵
+
+| 功能 | 路由 | 说明 |
+|------|------|------|
+| 🏠 首页 | `/` | 导航入口 |
+| 📺 课堂快闪 | `/class` / `/teacher/quiz` | 三种模式、TTS 朗读、知识图谱跟随 |
+| ✏️ 学生练习 | `/student/quiz` | 六种题型、AI 评分 |
+| 🔧 管理工具 | `/admin` | 语料管理 + AI 出题（需登录） |
+| 🔑 登录 | `/login` | 管理员登录（JWT） |
+
+### 课堂快闪三种模式
+
+| 模式 | 流程 | TTS |
+|------|------|-----|
+| 英语说汉 | 显示英语 → 间隔 → 显示中文 | ❌ |
+| 英语说英 | 显示英语 → 朗读 → 显示英文解释 | ✅ |
+| 听英语说汉 | 先朗读 → 显示中英文 | ✅ |
+
+### 六种题型（学生练习）
+
+| 题型 | 校验方式 |
+|------|---------|
+| 固定搭配 (collocation) | 规则匹配 |
+| 中英互译 (translation) | 多答案匹配 |
+| 同义词 (synonym) | 多答案匹配 |
+| 短语 (phrase) | 规则匹配 |
+| 词形变化 (morphology) | 精确匹配 |
+| 类似结构 (analogy) | AI 评分 |
+
+### 管理工具
+
+- **语料管理**：Word 导入（规则/AI 双模式）、增删改、语料组管理
+- **AI 出题**：AI 生成题目、已有题目管理、知识图谱生成
+
+---
 
 ## Quick Start
 
 ```bash
+# 安装依赖（根目录）
 npm install
+
+# 配置环境
 Copy-Item server/.env.example server/.env
+# 编辑 server/.env 填入数据库密码和 API Key
+
+# 数据库初始化
 npm run migrate
 npm run seed
-npm run precache:tts
-npm run dev
+
+# 开发模式
+npm run dev          # 同时启动前后端（前端 :5173, 后端 :3000）
 ```
 
-前端默认运行在 `http://localhost:5173`，后端默认运行在 `http://localhost:3000`。
+### 环境变量（server/.env）
 
-## Environment
+```env
+PORT=3000
+CLIENT_ORIGIN=http://localhost:5173
+DB_HOST=your-db-host
+DB_PORT=3306
+DB_NAME=ess
+DB_USER=ess
+DB_PASSWORD=your-password
+DB_CONNECTION_LIMIT=10
 
-后端只从 `server/.env` 读取数据库与 AI 配置。真实密码和 API Key 不应提交到源码。
+# AI — 硅基流动
+AI_BASE_URL=https://api.siliconflow.cn/v1
+AI_API_KEY=sk-your-key
+AI_MODEL=deepseek-ai/DeepSeek-V4-Flash
+AI_TIMEOUT_MS=12000
+
+# TTS — 阿里云 DashScope
+DASHSCOPE_API_KEY=sk-your-dashscope-key
+TTS_MODEL=qwen3-tts-vd-2026-01-26
+TTS_VOICE=沉稳清晰的女教师声音
+
+# 管理员密码（不设则默认 ebkss2026）
+ADMIN_PASSWORD=your-password
+```
+
+---
+
+## 部署（1Panel / 生产环境）
+
+```bash
+# 构建前端 + 启动
+npm run deploy
+
+# 或分步：
+npm run build:client    # 构建前端到 client/dist
+npm start               # 启动 Express（端口 3000）
+
+# Express 会自动检测 client/dist，存在则内置为静态文件
+# 单进程同时提供 API + 前端
+```
+
+生产环境可设 `SERVE_CLIENT=false` 关闭内置前端（由 Nginx 提供）。
+
+---
 
 ## Scripts
 
-- `npm run dev`：同时启动前后端开发服务
-- `npm run stop:dev`：清理本项目占用的 `3000/5173/5174` dev 进程
-- `npm run migrate`：创建或补齐数据库表结构
-- `npm run seed`：写入幂等测试数据
-- `npm run precache:tts`：预生成 give 词组 0.7/0.9 两档语速音频
-- `npm run test`：运行前后端测试
-- `npm run build`：构建前端并检查后端源码
+| 命令 | 说明 |
+|------|------|
+| `npm run dev` | 同时启动前后端开发服务 |
+| `npm run dev:server` | 仅后端 |
+| `npm run dev:client` | 仅前端 |
+| `npm run build` | 构建前端 + 检查后端源码 |
+| `npm run deploy` | 构建前端 + 启动生产服务 |
+| `npm start` | 启动生产服务 |
+| `npm run migrate` | 创建/更新数据库表 |
+| `npm run seed` | 写入种子数据 |
+| `npm run precache:tts` | 预生成 TTS 音频 |
+| `npm run test` | 运行所有测试 |
+| `npm run stop:dev` | 清理 dev 进程 |
 
-## Classroom Mode
+---
 
-- `/class`：课堂快闪投屏入口
-- `/api/corpus?group=give`：读取课堂语料
-- `/api/tts?text=give%20up&speed=0.7`：读取或生成缓存音频
-- `/api/graph?group=give`：读取或生成课堂知识图谱
+## 详细文档
 
-## Port Conflicts
+参见 [`项目总文档.md`](项目总文档.md) — 包含完整 API 清单、数据库设计、AI 提示词模板、开发状态总表。
 
-如果看到 `Port 3000 is already in use` 或 Vite 自动切到 `5174`，通常是上一次 dev server 还在后台运行。先执行：
+---
 
-```bash
-npm run stop:dev
-npm run dev
-```
+> 部署域名：`es.cldery.com`
