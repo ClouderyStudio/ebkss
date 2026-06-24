@@ -104,6 +104,20 @@ export const api = {
   },
   graph: (grammarPointId) => request(`/api/graph/${grammarPointId}`),
 
+  // ── 系统设置 ─────────────────────────────────
+  settings: {
+    getAll: () =>
+      request('/api/settings', {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      }),
+    update: (data) =>
+      request('/api/settings', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify(data)
+      })
+  },
+
   // ── 认证 ──────────────────────────────────────
   auth: {
     login: async (password) => {

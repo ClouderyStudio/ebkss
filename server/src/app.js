@@ -5,6 +5,7 @@ import { pingDatabase, query } from './db.js';
 import { config } from './config.js';
 import { generateQuestions, parseEnglishNotes } from './services/aiService.js';
 import { signToken, verifyToken, requireAuth as _requireAuth } from './services/authService.js';
+import { getAllSettings, getGroupedSettings, updateSettings } from './services/settingsService.js';
 import {
   createClassroomCorpusItem,
   deleteClassroomCorpusItem,
@@ -38,12 +39,15 @@ export function createApp() {
       const { password } = z.object({ password: z.string().min(1) }).parse(req.body);
       const crypto = await import('node:crypto');
 
-      // 优先从数据库读取密码（settings 表），否则用环境变量
-      let expectedHash;
-      try {
-        const [row] = await query("SELECT value FROM settings WHERE `key` = 'admin_password_hash'");
-        if (row) expectedHash = row.value;
-      } catch { /* 表可能不存在 */ }
+      // 优先从 config（运行时配置）读取密码hash，其次从 DB，最后用环境变量
+      let expectedHash = config.adminPasswordHash;
+
+      if (!expectedHash) {
+        try {
+          const [row] = await query("SELECT value FROM settings WHERE `key` = 'admin_password_hash'");
+          if (row) expectedHash = row.value;
+        } catch { /* 表可能不存在 */ }
+      }
 
       if (!expectedHash) {
         // fallback: 环境变量或默认密码
@@ -73,6 +77,42 @@ export function createApp() {
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
     const payload = verifyToken(token);
     res.json({ valid: !!payload });
+  });
+
+  // ── 系统设置管理 ────────────────────────────────
+  // 获取所有设置（需认证）
+  app.get('/api/settings', async (req, res, next) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (!verifyToken(token)) {
+        res.status(401).json({ error: '请先登录' });
+        return;
+      }
+      res.json({ groups: await getGroupedSettings() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // 批量更新设置（需认证）
+  app.put('/api/settings', async (req, res, next) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (!verifyToken(token)) {
+        res.status(401).json({ error: '请先登录' });
+        return;
+      }
+      const input = z.record(z.string(), z.string()).parse(req.body);
+      res.json({ settings: await updateSettings(input) });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: 'Invalid request', details: error.flatten() });
+        return;
+      }
+      next(error);
+    }
   });
 
   app.get('/api/health', async (_req, res) => {

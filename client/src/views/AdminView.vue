@@ -9,6 +9,9 @@
         <button :class="['admin-tab', { active: activeTab === 'ai' }]" @click="activeTab = 'ai'">
           <WandSparkles :size="18" /> AI 出题
         </button>
+        <button :class="['admin-tab', { active: activeTab === 'settings' }]" @click="activeTab = 'settings'">
+          <Settings :size="18" /> 系统设置
+        </button>
       </div>
 
       <!-- Tab: 语料管理 -->
@@ -183,6 +186,52 @@
         </section>
         <GraphPanel v-if="aiGraph" :graph="aiGraph" />
       </div>
+
+      <!-- Tab: 系统设置 -->
+      <div v-show="activeTab === 'settings'">
+        <div class="control-panel">
+          <div class="section-title">
+            <Settings :size="20" /> <h1>系统设置</h1>
+            <span class="settings-hint">修改后立即生效（部分需重启服务）</span>
+          </div>
+          <div v-if="settingsLoading" class="notice">加载中...</div>
+          <div v-if="settingsError" class="notice error">{{ settingsError }}</div>
+          <div v-if="settingsMessage" class="notice">{{ settingsMessage }}</div>
+          <div v-for="group in settingGroups" :key="group.label" class="settings-group">
+            <h3 class="settings-group-label">{{ group.label }}</h3>
+            <div v-for="item in group.items" :key="item.key" class="settings-row">
+              <label class="settings-label">
+                <code>{{ item.key }}</code>
+                <small v-if="item.description">{{ item.description }}</small>
+              </label>
+              <div class="settings-input-wrap">
+                <input
+                  v-if="!isSecretKey(item.key)"
+                  :value="settingsForm[item.key] ?? item.value"
+                  @input="onSettingsChange(item.key, ($event.target).value)"
+                  class="settings-input"
+                />
+                <input
+                  v-else
+                  :value="settingsForm[item.key] ?? ''"
+                  @input="onSettingsChange(item.key, ($event.target).value)"
+                  :placeholder="item.value ? '●●●●●●（已设置，留空不变）' : '未设置'"
+                  type="password"
+                  class="settings-input"
+                />
+              </div>
+            </div>
+          </div>
+          <div v-if="settingGroups.length" class="action-row">
+            <button class="primary-button submit-button" :disabled="settingsSaving" @click="saveSettings">
+              <Save :size="18" /> <span>{{ settingsSaving ? '保存中...' : '保存设置' }}</span>
+            </button>
+            <button class="secondary-button" @click="loadSettings">
+              <RefreshCw :size="18" /> <span>重新加载</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 新增/编辑弹窗 -->
@@ -217,7 +266,7 @@
 
 <script setup>
 // ── 语料管理 ───────────────────────────────────
-import { Database, Eye, ListChecks, Network, Pencil, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, WandSparkles, X, Zap } from '@lucide/vue';
+import { Database, Eye, ListChecks, Network, Pencil, PlusCircle, RefreshCw, Save, Settings, Sparkles, Trash2, Upload, WandSparkles, X, Zap } from '@lucide/vue';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { api, API_BASE } from '../api.js';
 import AppShell from '../components/AppShell.vue';
@@ -288,6 +337,98 @@ async function loadExistingQuestions() { aiLoadingExisting.value = true; try { c
 async function deleteExistingQuestion(q) { if (!confirm(`删除题目 #${q.id}？`)) return; try { await api.deleteClassroomItem(q.id); aiExistingQuestions.value = aiExistingQuestions.value.filter(item => item.id !== q.id); aiMessage.value = '已删除'; } catch (err) { aiError.value = err.message; } }
 async function saveAiDrafts() { aiError.value = ''; try { const r = await api.saveCorpus({ grammarPointId: aiGrammarPointId.value, questions: aiDrafts.value.map(d => ({ questionType: d.questionType, questionText: d.questionText, acceptableAnswers: d.answerText.split('\n').map(a => a.trim()).filter(Boolean), template: d.template, matchRule: d.matchRule || 'exact', difficulty: d.difficulty || 1, requiresAi: d.questionType === 'analogy' })) }); aiDrafts.value = []; aiMessage.value = `已保存 ${r.insertedCount} 道题`; } catch (err) { aiError.value = err.message; } }
 async function loadAiGraph() { aiGraphLoading.value = true; aiError.value = ''; try { const d = await api.graph(aiGrammarPointId.value); aiGraph.value = d.graph; aiMessage.value = d.cached ? '缓存图谱' : '新图谱'; } catch (err) { aiError.value = err.message; } finally { aiGraphLoading.value = false; } }
+
+// ── 系统设置 ───────────────────────────────────
+const settingGroups = ref([]);
+const settingsForm = reactive({});
+const settingsLoading = ref(false);
+const settingsSaving = ref(false);
+const settingsError = ref('');
+const settingsMessage = ref('');
+
+// 敏感 key 列表（API Key、密码类）
+const SECRET_KEYS = new Set([
+  'ai_api_key', 'tts_api_key', 'admin_password_hash', 'auth_secret'
+]);
+
+function isSecretKey(key) {
+  return SECRET_KEYS.has(key);
+}
+
+function onSettingsChange(key, value) {
+  settingsForm[key] = value;
+}
+
+async function loadSettings() {
+  settingsLoading.value = true;
+  settingsError.value = '';
+  settingsMessage.value = '';
+  try {
+    const d = await api.settings.getAll();
+    settingGroups.value = d.groups || [];
+    // 初始化 form（使用 DB 中当前值）
+    for (const group of settingGroups.value) {
+      for (const item of group.items) {
+        if (!(item.key in settingsForm)) {
+          settingsForm[item.key] = item.value;
+        }
+      }
+    }
+  } catch (err) {
+    settingsError.value = err.message;
+  } finally {
+    settingsLoading.value = false;
+  }
+}
+
+async function saveSettings() {
+  settingsSaving.value = true;
+  settingsError.value = '';
+  settingsMessage.value = '';
+  try {
+    // 只发送被修改过的值；对于敏感 key，空值不发送（保持原值）
+    const payload = {};
+    for (const [key, val] of Object.entries(settingsForm)) {
+      if (SECRET_KEYS.has(key) && (!val || val.trim() === '')) continue;
+      // 原始值未变则跳过
+      const original = findOriginalValue(key);
+      if (val === original) continue;
+      payload[key] = String(val ?? '');
+    }
+    if (Object.keys(payload).length === 0) {
+      settingsMessage.value = '没有需要保存的更改';
+      return;
+    }
+    await api.settings.update(payload);
+    // 更新本地缓存
+    for (const [key, val] of Object.entries(payload)) {
+      for (const group of settingGroups.value) {
+        const item = group.items.find(it => it.key === key);
+        if (item) item.value = val;
+      }
+    }
+    settingsMessage.value = `已更新 ${Object.keys(payload).length} 项设置`;
+  } catch (err) {
+    settingsError.value = err.message;
+  } finally {
+    settingsSaving.value = false;
+  }
+}
+
+function findOriginalValue(key) {
+  for (const group of settingGroups.value) {
+    const item = group.items.find(it => it.key === key);
+    if (item) return item.value;
+  }
+  return undefined;
+}
+
+// 切换到设置 Tab 时自动加载
+watch(activeTab, (tab) => {
+  if (tab === 'settings' && settingGroups.value.length === 0) {
+    loadSettings();
+  }
+});
 
 onMounted(async () => { await loadAll(); await store.loadUnits(); if (store.allGrammarPoints.length) { aiGrammarPointId.value = store.allGrammarPoints[0].id; aiNotes.value = store.allGrammarPoints[0].notesContent || ''; } });
 </script>

@@ -155,6 +155,51 @@ async function migrate() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // ── 系统配置表 ──────────────────────────────
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS settings (
+        \`key\` VARCHAR(100) PRIMARY KEY,
+        \`value\` TEXT NOT NULL,
+        description VARCHAR(255) DEFAULT '',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 写入默认配置（仅当 settings 表为空时）
+    const [existingCount] = await connection.query('SELECT COUNT(*) AS cnt FROM settings');
+    if (existingCount[0].cnt === 0) {
+      const defaults = [
+        // ── 应用 ──
+        ['app_port', '3001', '服务端口号（需重启生效）'],
+        ['app_client_origin', 'http://localhost:5173', '开发模式前端跨域来源'],
+        ['app_serve_client', 'true', '生产模式是否内置前端（需重启生效）'],
+        // ── AI (LLM) ──
+        ['ai_base_url', 'https://api.siliconflow.cn/v1', 'AI API 地址'],
+        ['ai_api_key', '', 'AI API Key（SiliconFlow）'],
+        ['ai_model', 'deepseek-ai/DeepSeek-V4-Flash', '默认 AI 模型'],
+        ['ai_notes_model', 'Qwen/Qwen3-32B', '笔记解析专用模型'],
+        ['ai_timeout_ms', '12000', 'AI 请求超时（毫秒）'],
+        // ── TTS ──
+        ['tts_api_key', '', 'DashScope API Key'],
+        ['tts_model', 'qwen3-tts-vd-2026-01-26', 'TTS 模型'],
+        ['tts_voice', '沉稳清晰的女教师声音', 'TTS 音色描述'],
+        ['tts_cache_path', 'public/audio/cache', '音频缓存目录'],
+        ['tts_default_speed', '0.8', '默认语速 (0.5-1.5)'],
+        ['tts_default_volume', '0.8', '默认音量 (0-1)'],
+        // ── 课堂 ──
+        ['classroom_show_to_answer_delay', '3500', '显示到答案延迟（毫秒）'],
+        ['classroom_answer_hold_delay', '3000', '答案保持延迟（毫秒）'],
+      ];
+
+      for (const [key, value, description] of defaults) {
+        await connection.query(
+          'INSERT IGNORE INTO settings (`key`, `value`, `description`) VALUES (?, ?, ?)',
+          [key, value, description]
+        );
+      }
+      console.log('Default settings inserted.');
+    }
+
     const indexStatements = [
       ['units', 'uniq_units_name_grade', 'ALTER TABLE units ADD UNIQUE KEY uniq_units_name_grade (name, grade_level)'],
       [

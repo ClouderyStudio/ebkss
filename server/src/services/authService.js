@@ -1,13 +1,17 @@
 import jwt from 'jsonwebtoken';
+import { config } from '../config.js';
 
-const SECRET = process.env.AUTH_SECRET || 'ebkss-classroom-secret-2026';
 const TOKEN_EXPIRY = '24h';
+
+function getSecret() {
+  return config.authSecret;
+}
 
 /**
  * 生成 JWT token
  */
 export function signToken() {
-  return jwt.sign({ role: 'teacher', iat: Math.floor(Date.now() / 1000) }, SECRET, {
+  return jwt.sign({ role: 'teacher', iat: Math.floor(Date.now() / 1000) }, getSecret(), {
     expiresIn: TOKEN_EXPIRY
   });
 }
@@ -17,7 +21,7 @@ export function signToken() {
  */
 export function verifyToken(token) {
   try {
-    return jwt.verify(token, SECRET);
+    return jwt.verify(token, getSecret());
   } catch {
     return null;
   }
