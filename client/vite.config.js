@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 5173,
+    allowedHosts: ['.cldery.com'],
     proxy: {
       '/api': 'http://localhost:3001',
       '/audio': 'http://localhost:3001'
