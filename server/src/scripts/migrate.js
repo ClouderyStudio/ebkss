@@ -173,6 +173,9 @@ async function migrate() {
         ['app_port', '3001', '服务端口号（需重启生效）'],
         ['app_client_origin', 'http://localhost:5173', '开发模式前端跨域来源'],
         ['app_serve_client', 'true', '生产模式是否内置前端（需重启生效）'],
+        // ── 认证 ──
+        ['admin_password_hash', '', '管理员密码 SHA256 hash（空=使用默认密码）'],
+        ['auth_secret', '', 'JWT 签名密钥（空=使用默认密钥）'],
         // ── AI (LLM) ──
         ['ai_base_url', 'https://api.siliconflow.cn/v1', 'AI API 地址'],
         ['ai_api_key', '', 'AI API Key（SiliconFlow）'],

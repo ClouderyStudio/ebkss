@@ -319,7 +319,7 @@ function resolveAudioUrl(url) {
   }
 
   if (import.meta.env.DEV) {
-    return `http://localhost:3000${url}`;
+    return `http://localhost:3001${url}`;
   }
 
   return url;

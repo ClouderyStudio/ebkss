@@ -102,7 +102,7 @@ export const config = {
     return runtime.port ?? toInt(process.env.PORT, 3000);
   },
   get clientOrigin() {
-    return runtime.clientOrigin ?? process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    return runtime.clientOrigin ?? (process.env.CLIENT_ORIGIN || 'http://localhost:5173');
   },
   get serveClient() {
     return runtime.serveClient !== null ? runtime.serveClient !== 'false' : process.env.SERVE_CLIENT !== 'false';

@@ -25,6 +25,7 @@ export async function getGroupedSettings() {
   const rows = await query('SELECT `key`, `value`, `description`, `updated_at` FROM settings ORDER BY `key`');
   const groups = {
     app: { label: '应用', items: [] },
+    auth: { label: '认证', items: [] },
     ai: { label: 'AI', items: [] },
     tts: { label: '语音合成 (TTS)', items: [] },
     classroom: { label: '课堂', items: [] }
@@ -34,6 +35,8 @@ export async function getGroupedSettings() {
     const item = { key: row.key, value: row.value, description: row.description || '', updatedAt: row.updated_at };
     if (row.key.startsWith('app_')) {
       groups.app.items.push(item);
+    } else if (row.key.startsWith('auth_') || row.key.startsWith('admin_')) {
+      groups.auth.items.push(item);
     } else if (row.key.startsWith('ai_')) {
       groups.ai.items.push(item);
     } else if (row.key.startsWith('tts_')) {
@@ -75,8 +78,8 @@ export async function updateSettings(updates) {
   const entries = Object.entries(updates);
   for (const [key, value] of entries) {
     await execute(
-      'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
-      [key, String(value ?? '')]
+      'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = ?',
+      [key, String(value ?? ''), String(value ?? '')]
     );
   }
 
@@ -104,6 +107,8 @@ export async function initSettingsFromEnv() {
     ['app_port', process.env.PORT || '3001'],
     ['app_client_origin', process.env.CLIENT_ORIGIN || 'http://localhost:5173'],
     ['app_serve_client', process.env.SERVE_CLIENT !== undefined ? process.env.SERVE_CLIENT : 'true'],
+    ['admin_password_hash', process.env.ADMIN_PASSWORD || ''],
+    ['auth_secret', process.env.AUTH_SECRET || ''],
     ['ai_base_url', process.env.AI_BASE_URL || 'https://api.siliconflow.cn/v1'],
     ['ai_api_key', process.env.SILICONFLOW_API_KEY || process.env.AI_API_KEY || ''],
     ['ai_model', process.env.SILICONFLOW_LLM_MODEL || process.env.AI_MODEL || 'deepseek-ai/DeepSeek-V4-Flash'],

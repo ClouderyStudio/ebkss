@@ -308,8 +308,8 @@ const aiOutput = ref('');
 const aiExistingQuestions = ref([]);
 const aiLoadingExisting = ref(false);
 
-const aiSelectedPoint = computed(() => store.allGrammarPoints.find(p => p.id === aiGrammarPointId.value));
-watch(aiSelectedPoint, (p) => { if (p) { aiNotes.value = p.notesContent || ''; loadExistingQuestions(); } });
+const selectedPoint = computed(() => store.allGrammarPoints.find(p => p.id === aiGrammarPointId.value));
+watch(selectedPoint, (p) => { if (p) { aiNotes.value = p.notesContent || ''; loadExistingQuestions(); } });
 
 // ── 语料管理方法 ──────────────────────────────
 function payloadFromForm() { return { english: form.english, chinese: form.chinese, englishExplain: form.englishExplain, phonetic: form.phonetic, tags: form.tagsText.split(',').map(t => t.trim()).filter(Boolean), groupName: selectedGroup.value, sortOrder: form.sortOrder || undefined }; }

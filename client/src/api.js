@@ -9,12 +9,13 @@ function saveToken(token) {
 }
 
 async function request(path, options = {}) {
+  const { headers: extraHeaders, ...rest } = options;
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
       'Content-Type': 'application/json',
-      ...(options.headers || {})
+      ...(extraHeaders || {})
     },
-    ...options
+    ...rest
   });
 
   const data = await response.json().catch(() => ({}));
