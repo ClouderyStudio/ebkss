@@ -105,6 +105,64 @@ export const api = {
   },
   graph: (grammarPointId) => request(`/api/graph/${grammarPointId}`),
 
+  // ── 笔记管理 ─────────────────────────────────
+  notes: {
+    /** 获取笔记总览（按语法点分组计数） */
+    overview: () => request('/api/notes/overview'),
+    /** 获取某个语法点的所有笔记 */
+    list: (grammarPointId) => request(`/api/notes?grammarPointId=${grammarPointId}`),
+    /** 获取单条笔记详情 */
+    get: (id) => request(`/api/notes/${id}`),
+    /** 导入文本笔记 */
+    import: ({ grammarPointId, rawContent, title, sourceKey }) =>
+      request('/api/notes', {
+        method: 'POST',
+        body: JSON.stringify({ grammarPointId, rawContent, title, sourceKey })
+      }),
+    /** 导入 docx 文件笔记 */
+    importDocx: async (grammarPointId, file, title = '') => {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+      return request('/api/notes/import-docx', {
+        method: 'POST',
+        body: JSON.stringify({ grammarPointId, file: base64, title })
+      });
+    },
+    /** 解析笔记为语料条目（预览） */
+    parse: (id, mode = 'ai') =>
+      request(`/api/notes/${id}/parse`, {
+        method: 'POST',
+        body: JSON.stringify({ mode })
+      }),
+    /** 从笔记生成课堂语料 */
+    generateCorpus: (id, mode = 'ai') =>
+      request(`/api/notes/${id}/generate-corpus`, {
+        method: 'POST',
+        body: JSON.stringify({ mode })
+      }),
+    /** 从笔记生成题目 */
+    generateQuestions: (id, count = 4) =>
+      request(`/api/notes/${id}/generate-questions`, {
+        method: 'POST',
+        body: JSON.stringify({ count })
+      }),
+    /** 删除笔记 */
+    delete: (id) => request(`/api/notes/${id}`, { method: 'DELETE' })
+  },
+
+  /** 按语法点获取课堂语料 */
+  corpusByGrammarPoint: (grammarPointId) =>
+    request(`/api/corpus/by-grammar?grammarPointId=${grammarPointId}`),
+
+  /** 删除某个语法点的所有课堂语料 */
+  deleteCorpusByGrammarPoint: (grammarPointId) =>
+    request(`/api/corpus/by-grammar?grammarPointId=${grammarPointId}`, { method: 'DELETE' }),
+
   // ── 系统设置 ─────────────────────────────────
   settings: {
     getAll: () =>

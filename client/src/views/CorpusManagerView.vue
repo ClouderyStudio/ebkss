@@ -9,6 +9,13 @@
 
         <div class="form-grid corpus-toolbar">
           <label class="field">
+            <span>筛选方式</span>
+            <select v-model="filterMode">
+              <option value="group">按语料组</option>
+              <option value="grammar">按语法点</option>
+            </select>
+          </label>
+          <label v-if="filterMode === 'group'" class="field">
             <span>语料组</span>
             <input v-model="selectedGroup" list="group-options" />
             <datalist id="group-options">
@@ -17,7 +24,14 @@
               </option>
             </datalist>
           </label>
-          <button class="secondary-button" type="button" @click="loadAll">
+          <label v-else class="field">
+            <span>语法点</span>
+            <select v-model.number="filterGrammarPointId" @change="loadByGrammar">
+              <option :value="0">-- 全部 --</option>
+              <option v-for="p in store.allGrammarPoints" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+          </label>
+          <button class="secondary-button" type="button" @click="filterMode === 'group' ? loadAll() : loadByGrammar()">
             <RefreshCw :size="18" aria-hidden="true" />
             <span>刷新</span>
           </button>
@@ -132,7 +146,8 @@
       <section class="draft-panel corpus-table-panel">
         <div class="section-title">
           <ListChecks :size="22" aria-hidden="true" />
-          <h2>{{ selectedGroup }} · {{ items.length }} 条</h2>
+          <h2 v-if="filterMode === 'group'">{{ selectedGroup }} · {{ items.length }} 条</h2>
+          <h2 v-else>{{ grammarFilterName }} · {{ items.length }} 条</h2>
         </div>
 
         <div v-if="loading" class="notice">正在读取语料...</div>
@@ -169,11 +184,13 @@
 
 <script setup>
 import { Database, ListChecks, Network, Pencil, RefreshCw, Save, Sparkles, Trash2, Upload, X, Zap } from '@lucide/vue';
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { api, API_BASE } from '../api.js';
 import AppShell from '../components/AppShell.vue';
 import { CLASSROOM_CONFIG } from '../config.js';
+import { useUnitsStore } from '../stores/units.js';
 
+const store = useUnitsStore();
 const selectedGroup = ref(CLASSROOM_CONFIG.defaultGroup);
 const groups = ref([]);
 const items = ref([]);
@@ -181,6 +198,10 @@ const loading = ref(false);
 const editingId = ref(0);
 const message = ref('');
 const error = ref('');
+
+// 语法点筛选
+const filterGrammarPointId = ref(0);
+const filterMode = ref('group'); // 'group' | 'grammar'
 
 // 导入状态
 const fileInput = ref(null);
@@ -233,6 +254,20 @@ async function loadItems() {
   error.value = '';
   try {
     const data = await api.classroomCorpus(selectedGroup.value);
+    items.value = data.items || [];
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function loadByGrammar() {
+  if (!filterGrammarPointId.value) { items.value = []; return; }
+  loading.value = true;
+  error.value = '';
+  try {
+    const data = await api.corpusByGrammarPoint(filterGrammarPointId.value);
     items.value = data.items || [];
   } catch (err) {
     error.value = err.message;
@@ -384,10 +419,19 @@ async function importWithSSE() {
   }
 }
 
+const grammarFilterName = computed(() => {
+  if (!filterGrammarPointId.value) return '请选择语法点';
+  const p = store.allGrammarPoints.find(g => g.id === filterGrammarPointId.value);
+  return p ? p.name : '';
+});
+
 watch(selectedGroup, () => {
   resetForm();
   loadItems();
 });
 
-onMounted(loadAll);
+onMounted(async () => {
+  await store.loadUnits();
+  await loadAll();
+});
 </script>

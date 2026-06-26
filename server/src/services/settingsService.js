@@ -74,8 +74,15 @@ export async function updateSettings(updates) {
     }
   }
 
+  // admin_password_hash 需要对明文做 SHA256 哈希再存储
+  const crypto = await import('node:crypto');
+  const processed = { ...updates };
+  if (processed.admin_password_hash !== undefined && processed.admin_password_hash !== '') {
+    processed.admin_password_hash = crypto.createHash('sha256').update(processed.admin_password_hash).digest('hex');
+  }
+
   // 批量 UPSERT
-  const entries = Object.entries(updates);
+  const entries = Object.entries(processed);
   for (const [key, value] of entries) {
     await execute(
       'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = ?',
@@ -103,11 +110,17 @@ export async function initSettingsFromEnv() {
   const [counter] = await query('SELECT COUNT(*) AS cnt FROM settings');
   if (Number(counter?.cnt ?? 0) > 0) return;
 
+  // .env 中的 ADMIN_PASSWORD 是明文，必须哈希后再存入 admin_password_hash
+  const crypto = await import('node:crypto');
+  const adminHash = process.env.ADMIN_PASSWORD
+    ? crypto.createHash('sha256').update(process.env.ADMIN_PASSWORD).digest('hex')
+    : '';
+
   const envDefaults = [
     ['app_port', process.env.PORT || '3001'],
     ['app_client_origin', process.env.CLIENT_ORIGIN || 'http://localhost:5173'],
     ['app_serve_client', process.env.SERVE_CLIENT !== undefined ? process.env.SERVE_CLIENT : 'true'],
-    ['admin_password_hash', process.env.ADMIN_PASSWORD || ''],
+    ['admin_password_hash', adminHash],
     ['auth_secret', process.env.AUTH_SECRET || ''],
     ['ai_base_url', process.env.AI_BASE_URL || 'https://api.siliconflow.cn/v1'],
     ['ai_api_key', process.env.SILICONFLOW_API_KEY || process.env.AI_API_KEY || ''],

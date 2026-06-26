@@ -88,6 +88,7 @@ async function migrate() {
     `);
 
     await addColumnIfMissing(connection, 'corpus', 'source_key', 'VARCHAR(120)');
+    await addColumnIfMissing(connection, 'classroom_corpus', 'grammar_point_id', 'INT');
     await connection.query(`
       CREATE TABLE IF NOT EXISTS knowledge_graphs (
         id INT PRIMARY KEY AUTO_INCREMENT,
@@ -139,9 +140,11 @@ async function migrate() {
         phonetic VARCHAR(100),
         tags JSON,
         group_name VARCHAR(100) NOT NULL,
+        grammar_point_id INT,
         sort_order INT DEFAULT 0,
         source_key VARCHAR(120),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cc_grammar_point (grammar_point_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -152,6 +155,24 @@ async function migrate() {
         graph_data JSON NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // ── 导入笔记表 ──────────────────────────────
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS imported_notes (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        grammar_point_id INT NOT NULL,
+        title VARCHAR(200) DEFAULT '',
+        raw_content LONGTEXT NOT NULL,
+        parsed_entries JSON DEFAULT NULL,
+        source_type VARCHAR(20) DEFAULT 'docx',
+        source_key VARCHAR(120),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_imported_notes_grammar FOREIGN KEY (grammar_point_id) REFERENCES grammar_points(id),
+        INDEX idx_notes_grammar (grammar_point_id),
+        UNIQUE KEY uniq_notes_source_key (source_key)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -232,6 +253,16 @@ async function migrate() {
         'classroom_knowledge_graphs',
         'uniq_classroom_graph_group',
         'ALTER TABLE classroom_knowledge_graphs ADD UNIQUE KEY uniq_classroom_graph_group (group_name)'
+      ],
+      [
+        'imported_notes',
+        'uniq_notes_source_key',
+        'ALTER TABLE imported_notes ADD UNIQUE KEY uniq_notes_source_key (source_key)'
+      ],
+      [
+        'imported_notes',
+        'idx_notes_grammar',
+        'ALTER TABLE imported_notes ADD KEY idx_notes_grammar (grammar_point_id)'
       ]
     ];
 

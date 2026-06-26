@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { z } from 'zod';
-import { pingDatabase, query } from './db.js';
+import { execute, pingDatabase, query } from './db.js';
 import { config } from './config.js';
 import { generateQuestions, parseEnglishNotes } from './services/aiService.js';
 import { signToken, verifyToken, requireAuth as _requireAuth } from './services/authService.js';
@@ -10,12 +10,25 @@ import {
   createClassroomCorpusItem,
   deleteClassroomCorpusItem,
   getClassroomCorpus,
+  getClassroomCorpusByGrammarPoint,
   getClassroomGraph,
   getClassroomGroups,
   invalidateClassroomGraph,
   updateClassroomCorpusItem
 } from './services/classroomService.js';
 import { getKnowledgeGraph } from './services/graphService.js';
+import {
+  deleteCorpusForGrammarPoint,
+  deleteNote,
+  generateCorpusFromNote,
+  generateQuestionsFromNote,
+  getImportedNotes,
+  getNoteById,
+  getNotesOverview,
+  importNotes,
+  importNotesFromDocx,
+  parseNoteToEntries
+} from './services/notesService.js';
 import { getQuiz, getUnits, saveGeneratedQuestions, submitQuiz } from './services/quizService.js';
 import { getOrCreateSpeech } from './services/ttsService.js';
 import { parseDocx } from './utils/docxParser.js';
@@ -58,6 +71,21 @@ export function createApp() {
       const inputHash = crypto.createHash('sha256').update(password).digest('hex');
 
       if (inputHash !== expectedHash) {
+        // 防御性修复：DB 中可能存了明文密码（旧版 bug 遗留数据）
+        // SHA256 hex 固定 64 字符 [0-9a-f]；明文密码不会是 64 位 hex
+        const isHashFormat = /^[0-9a-f]{64}$/.test(expectedHash);
+        if (!isHashFormat && crypto.createHash('sha256').update(expectedHash).digest('hex') === inputHash) {
+          // DB 存的是明文，自动修正为 SHA256 哈希
+          const hashed = crypto.createHash('sha256').update(expectedHash).digest('hex');
+          await execute(
+            "INSERT INTO settings (`key`, `value`) VALUES ('admin_password_hash', ?) ON DUPLICATE KEY UPDATE `value` = ?",
+            [hashed, hashed]
+          );
+          console.log('[auth] Auto-healed: DB plaintext password hashed to SHA256.');
+          res.json({ token: signToken() });
+          return;
+        }
+
         res.status(401).json({ error: '密码错误' });
         return;
       }
@@ -359,6 +387,125 @@ export function createApp() {
     }
 
     res.end();
+  });
+
+  // ── 笔记管理 ──────────────────────────────────────
+  // 获取笔记总览（所有语法点的笔记数量）
+  app.get('/api/notes/overview', async (_req, res, next) => {
+    try {
+      res.json({ overview: await getNotesOverview() });
+    } catch (error) { next(error); }
+  });
+
+  // 获取某个语法点的所有笔记
+  app.get('/api/notes', async (req, res, next) => {
+    try {
+      const { grammarPointId } = z.object({
+        grammarPointId: z.coerce.number().int().positive()
+      }).parse(req.query);
+      res.json({ notes: await getImportedNotes(grammarPointId) });
+    } catch (error) { next(error); }
+  });
+
+  // 获取单条笔记详情
+  app.get('/api/notes/:id', async (req, res, next) => {
+    try {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      res.json({ note: await getNoteById(id) });
+    } catch (error) { next(error); }
+  });
+
+  // 导入文本笔记
+  const importNoteSchema = z.object({
+    grammarPointId: z.coerce.number().int().positive(),
+    rawContent: z.string().min(1),
+    title: z.string().optional().default(''),
+    sourceKey: z.string().optional()
+  });
+
+  app.post('/api/notes', async (req, res, next) => {
+    try {
+      const input = importNoteSchema.parse(req.body);
+      res.status(201).json({ note: await importNotes(input) });
+    } catch (error) { next(error); }
+  });
+
+  // 导入 docx 笔记
+  const importDocxNoteSchema = z.object({
+    grammarPointId: z.coerce.number().int().positive(),
+    file: z.string().min(1),
+    title: z.string().optional().default('')
+  });
+
+  app.post('/api/notes/import-docx', async (req, res, next) => {
+    try {
+      const { grammarPointId, file, title } = importDocxNoteSchema.parse(req.body);
+      res.status(201).json({ note: await importNotesFromDocx(grammarPointId, file, title) });
+    } catch (error) { next(error); }
+  });
+
+  // 从笔记解析语料条目（预览，不写入）
+  app.post('/api/notes/:id/parse', async (req, res, next) => {
+    try {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      const { mode } = z.object({ mode: z.enum(['rule', 'ai']).default('ai') }).parse(req.body);
+      res.json({ entries: await parseNoteToEntries(id, mode) });
+    } catch (error) { next(error); }
+  });
+
+  // 从笔记生成课堂语料（解析 + 写入 classroom_corpus）
+  const generateCorpusSchema = z.object({
+    mode: z.enum(['rule', 'ai']).default('ai')
+  });
+
+  app.post('/api/notes/:id/generate-corpus', async (req, res, next) => {
+    try {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      const { mode } = generateCorpusSchema.parse(req.body);
+      res.json({ result: await generateCorpusFromNote(id, mode) });
+    } catch (error) { next(error); }
+  });
+
+  // 从笔记生成题目
+  const generateQuestionsSchema = z.object({
+    count: z.coerce.number().int().min(1).max(12).default(4)
+  });
+
+  app.post('/api/notes/:id/generate-questions', async (req, res, next) => {
+    try {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      const { count } = generateQuestionsSchema.parse(req.body);
+      res.json(await generateQuestionsFromNote(id, count));
+    } catch (error) { next(error); }
+  });
+
+  // 删除笔记
+  app.delete('/api/notes/:id', async (req, res, next) => {
+    try {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      res.json(await deleteNote(id));
+    } catch (error) { next(error); }
+  });
+
+  // 获取某个语法点的课堂语料
+  app.get('/api/corpus/by-grammar', async (req, res, next) => {
+    try {
+      const { grammarPointId } = z.object({
+        grammarPointId: z.coerce.number().int().positive()
+      }).parse(req.query);
+      res.json({ items: await getClassroomCorpusByGrammarPoint(grammarPointId) });
+    } catch (error) { next(error); }
+  });
+
+  // 删除某个语法点的所有课堂语料
+  app.delete('/api/corpus/by-grammar', async (req, res, next) => {
+    try {
+      const { grammarPointId } = z.object({
+        grammarPointId: z.coerce.number().int().positive()
+      }).parse(req.query);
+      await deleteCorpusForGrammarPoint(grammarPointId);
+      res.json({ deleted: true, grammarPointId });
+    } catch (error) { next(error); }
   });
 
   app.delete('/api/graph', async (req, res, next) => {

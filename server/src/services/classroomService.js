@@ -46,6 +46,7 @@ function mapClassroomCorpusRow(row) {
     phonetic: row.phonetic,
     tags: parseJson(row.tags, []),
     groupName: row.group_name,
+    grammarPointId: row.grammar_point_id ?? null,
     sortOrder: row.sort_order,
     sourceKey: row.source_key,
     graphNodeId: graphNodeIdFromEnglish(row.english)
@@ -121,7 +122,7 @@ export async function getClassroomCorpus(groupName = 'give') {
   const group = normalizeGroupName(groupName);
   const rows = await query(
     `
-      SELECT id, english, chinese, english_explain, phonetic, tags, group_name, sort_order, source_key
+      SELECT id, english, chinese, english_explain, phonetic, tags, group_name, grammar_point_id, sort_order, source_key
       FROM classroom_corpus
       WHERE group_name = ?
       ORDER BY sort_order, id
@@ -129,6 +130,22 @@ export async function getClassroomCorpus(groupName = 'give') {
     [group]
   );
 
+  return rows.map(mapClassroomCorpusRow);
+}
+
+/**
+ * 按语法点查询课堂语料
+ */
+export async function getClassroomCorpusByGrammarPoint(grammarPointId) {
+  const rows = await query(
+    `
+      SELECT id, english, chinese, english_explain, phonetic, tags, group_name, grammar_point_id, sort_order, source_key
+      FROM classroom_corpus
+      WHERE grammar_point_id = ?
+      ORDER BY sort_order, id
+    `,
+    [grammarPointId]
+  );
   return rows.map(mapClassroomCorpusRow);
 }
 
@@ -159,12 +176,13 @@ export async function createClassroomCorpusItem(input) {
     group
   ]);
   const sortOrder = input.sortOrder ?? Number(maxRow?.max_order || 0) + 1;
+  const grammarPointId = input.grammarPointId ?? null;
 
   const result = await execute(
     `
       INSERT INTO classroom_corpus
-        (english, chinese, english_explain, phonetic, tags, group_name, sort_order, source_key)
-      VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?)
+        (english, chinese, english_explain, phonetic, tags, group_name, grammar_point_id, sort_order, source_key)
+      VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?)
     `,
     [
       input.english,
@@ -173,6 +191,7 @@ export async function createClassroomCorpusItem(input) {
       input.phonetic || '',
       JSON.stringify(normalizeTags(input.tags)),
       group,
+      grammarPointId,
       sortOrder,
       input.sourceKey || `manual-${group}-${Date.now()}`
     ]

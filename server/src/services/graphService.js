@@ -35,13 +35,14 @@ export async function getKnowledgeGraph(grammarPointId) {
     notesContent: grammarPoint.notes_content || grammarPoint.description || ''
   });
 
+  const graphJson = JSON.stringify(graph);
   await execute(
     `
       INSERT INTO knowledge_graphs (grammar_point_id, graph_data)
       VALUES (?, CAST(? AS JSON))
-      ON DUPLICATE KEY UPDATE graph_data = VALUES(graph_data), updated_at = CURRENT_TIMESTAMP
+      ON DUPLICATE KEY UPDATE graph_data = ?, updated_at = CURRENT_TIMESTAMP
     `,
-    [grammarPointId, JSON.stringify(graph)]
+    [grammarPointId, graphJson, graphJson]
   );
 
   return { cached: false, graph };
