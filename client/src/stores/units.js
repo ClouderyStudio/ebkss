@@ -12,8 +12,8 @@ export const useUnitsStore = defineStore('units', {
     allGrammarPoints: (state) => state.units.flatMap((unit) => unit.grammarPoints || [])
   },
   actions: {
-    async loadUnits() {
-      if (this.units.length > 0) {
+    async loadUnits({ force = false } = {}) {
+      if (this.units.length > 0 && !force) {
         return;
       }
 
@@ -27,7 +27,9 @@ export const useUnitsStore = defineStore('units', {
       } finally {
         this.loading = false;
       }
+    },
+    async reloadUnits() {
+      await this.loadUnits({ force: true });
     }
   }
 });
-

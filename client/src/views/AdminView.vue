@@ -124,6 +124,9 @@
             <button class="secondary-button" type="button" @click="invalidateGraph">
               <Network :size="18" /> <span>重建图谱</span>
             </button>
+            <button class="secondary-button" type="button" @click="createGroup">
+              <PlusCircle :size="18" /> <span>新建语料组</span>
+            </button>
             <button class="secondary-button danger-button" type="button" :disabled="!selectedGroup" @click="deleteGroup">
               <Trash2 :size="18" /> <span>删除语料组</span>
             </button>
@@ -204,6 +207,14 @@
                 <option v-for="point in store.allGrammarPoints" :key="point.id" :value="point.id">{{ point.name }}</option>
               </select>
             </label>
+            <div class="action-row compact-actions">
+              <button class="secondary-button" type="button" @click="openGrammarPointModal">
+                <PlusCircle :size="18" /> <span>新建语法点</span>
+              </button>
+              <button class="secondary-button danger-button" type="button" :disabled="!aiGrammarPointId" @click="deleteSelectedGrammarPoint">
+                <Trash2 :size="18" /> <span>删除语法点</span>
+              </button>
+            </div>
             <label class="field compact">
               <span>题数</span>
               <input v-model.number="aiCount" min="1" max="12" type="number" />
@@ -341,6 +352,32 @@
         </form>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showGrammarPointModal" class="modal-backdrop" @click.self="showGrammarPointModal = false">
+        <form class="modal-panel" @submit.prevent="createGrammarPoint">
+          <div class="modal-header">
+            <h2>新建语法点</h2>
+            <button class="icon-button" type="button" @click="showGrammarPointModal = false"><X :size="20" /></button>
+          </div>
+          <div class="modal-body">
+            <label class="field">
+              <span>所属单元</span>
+              <select v-model.number="grammarPointForm.unitId" required>
+                <option v-for="unit in store.units" :key="unit.id" :value="unit.id">{{ unit.name }}</option>
+              </select>
+            </label>
+            <label class="field"><span>语法点名称 *</span><input v-model.trim="grammarPointForm.name" required /></label>
+            <label class="field"><span>说明</span><textarea v-model.trim="grammarPointForm.description" rows="2" /></label>
+            <label class="field"><span>默认笔记</span><textarea v-model.trim="grammarPointForm.notesContent" rows="4" /></label>
+            <div class="action-row">
+              <button class="primary-button" type="submit" :disabled="grammarPointSaving"><Save :size="18" /><span>{{ grammarPointSaving ? '创建中...' : '创建' }}</span></button>
+              <button class="secondary-button" type="button" @click="showGrammarPointModal = false"><X :size="18" /><span>取消</span></button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </Teleport>
   </AppShell>
 </template>
 
@@ -465,6 +502,9 @@ const importMode = ref(null);
 const importResult = ref(null);
 const sseMessages = ref([]);
 const form = reactive({ english: '', chinese: '', englishExplain: '', phonetic: '', tagsText: '', sortOrder: 0 });
+const showGrammarPointModal = ref(false);
+const grammarPointSaving = ref(false);
+const grammarPointForm = reactive({ unitId: 0, name: '', description: '', notesContent: '' });
 
 // ── AI 出题状态 ──────────────────────────────────
 const aiGrammarPointId = ref(0);
@@ -495,6 +535,7 @@ function editItem(item) { editingId.value = item.id; selectedGroup.value = item.
 async function deleteItem(item) { if (!confirm(`删除"${item.english}"？`)) return; error.value = ''; try { await api.deleteClassroomItem(item.id); message.value = '已删除'; if (editingId.value === item.id) resetForm(); await loadAll(); } catch (err) { error.value = err.message; } }
 async function invalidateGraph() { error.value = ''; try { await api.invalidateClassroomGraph(selectedGroup.value); message.value = '图谱缓存已清理'; } catch (err) { error.value = err.message; } }
 async function deleteGroup() { if (!confirm(`确定删除语料组"${selectedGroup.value}"及其所有条目？此操作不可恢复。`)) return; error.value = ''; try { const r = await api.deleteClassroomGroup(selectedGroup.value); message.value = `已删除语料组"${r.groupName}"（${r.count} 条）`; selectedGroup.value = CLASSROOM_CONFIG.defaultGroup; await loadAll(); } catch (err) { error.value = err.message; } }
+async function createGroup() { const groupName = window.prompt('请输入新语料组名称'); if (!groupName?.trim()) return; error.value = ''; try { const result = await api.createClassroomGroup(groupName.trim()); selectedGroup.value = result.group.groupName; message.value = `已创建语料组“${result.group.groupName}”`; await loadAll(); } catch (err) { error.value = err.message; } }
 
 // 导入（旧版兼容）
 function onFileChange(event) { selectedFile.value = event.target.files?.[0] || null; importResult.value = null; error.value = ''; }
@@ -505,10 +546,14 @@ watch(selectedGroup, () => { resetForm(); loadItems(); });
 
 // ── AI 出题方法 ──────────────────────────────────
 async function generateQuestions() { aiGenerating.value = true; aiError.value = ''; aiOutput.value = ''; try { const d = await api.generate({ grammarPointId: aiGrammarPointId.value, notesContent: aiNotes.value, count: aiCount.value }); aiOutput.value = JSON.stringify(d.questions, null, 2); aiDrafts.value = (d.questions || []).map(q => ({ ...q, answerText: q.acceptableAnswers.join('\n') })); aiMessage.value = `生成了 ${aiDrafts.value.length} 道题目`; } catch (err) { aiError.value = err.message; } finally { aiGenerating.value = false; } }
-async function loadExistingQuestions() { aiLoadingExisting.value = true; try { const d = await api.quiz(aiGrammarPointId.value, { count: 50, mode: 'teacher' }); aiExistingQuestions.value = d.questions || []; } catch (err) { aiError.value = err.message; } finally { aiLoadingExisting.value = false; } }
-async function deleteExistingQuestion(q) { if (!confirm(`删除题目 #${q.id}？`)) return; try { await api.deleteClassroomItem(q.id); aiExistingQuestions.value = aiExistingQuestions.value.filter(item => item.id !== q.id); aiMessage.value = '已删除'; } catch (err) { aiError.value = err.message; } }
-async function saveAiDrafts() { aiError.value = ''; try { const r = await api.saveCorpus({ grammarPointId: aiGrammarPointId.value, questions: aiDrafts.value.map(d => ({ questionType: d.questionType, questionText: d.questionText, acceptableAnswers: d.answerText.split('\n').map(a => a.trim()).filter(Boolean), template: d.template, matchRule: d.matchRule || 'exact', difficulty: d.difficulty || 1, requiresAi: d.questionType === 'analogy' })) }); aiDrafts.value = []; aiMessage.value = `已保存 ${r.insertedCount} 道题`; } catch (err) { aiError.value = err.message; } }
+async function loadExistingQuestions() { if (!aiGrammarPointId.value) return; aiLoadingExisting.value = true; try { const d = await api.questions(aiGrammarPointId.value); aiExistingQuestions.value = d.questions || []; } catch (err) { aiError.value = err.message; } finally { aiLoadingExisting.value = false; } }
+async function deleteExistingQuestion(q) { if (!confirm(`删除题目 #${q.id}？`)) return; try { await api.deleteQuestion(q.id); aiExistingQuestions.value = aiExistingQuestions.value.filter(item => item.id !== q.id); aiMessage.value = '已删除'; } catch (err) { aiError.value = err.message; } }
+async function saveAiDrafts() { aiError.value = ''; try { const r = await api.saveCorpus({ grammarPointId: aiGrammarPointId.value, questions: aiDrafts.value.map(d => ({ questionType: d.questionType, questionText: d.questionText, acceptableAnswers: d.answerText.split('\n').map(a => a.trim()).filter(Boolean), template: d.template, matchRule: d.matchRule || 'exact', difficulty: d.difficulty || 1, requiresAi: d.questionType === 'analogy' })) }); aiDrafts.value = []; aiMessage.value = `已保存 ${r.insertedCount} 道题`; await loadExistingQuestions(); } catch (err) { aiError.value = err.message; } }
 async function loadAiGraph() { aiGraphLoading.value = true; aiError.value = ''; try { const d = await api.graph(aiGrammarPointId.value); aiGraph.value = d.graph; aiMessage.value = d.cached ? '缓存图谱' : '新图谱'; } catch (err) { aiError.value = err.message; } finally { aiGraphLoading.value = false; } }
+
+function openGrammarPointModal() { grammarPointForm.unitId = selectedPoint.value?.unitId || store.firstUnit?.id || 0; grammarPointForm.name = ''; grammarPointForm.description = ''; grammarPointForm.notesContent = ''; showGrammarPointModal.value = true; }
+async function createGrammarPoint() { grammarPointSaving.value = true; aiError.value = ''; try { const d = await api.grammarPoints.create(grammarPointForm); await store.reloadUnits(); notesGrammarPointId.value = d.grammarPoint.id; aiGrammarPointId.value = d.grammarPoint.id; showGrammarPointModal.value = false; aiMessage.value = `已创建语法点“${d.grammarPoint.name}”`; } catch (err) { aiError.value = err.message; } finally { grammarPointSaving.value = false; } }
+async function deleteSelectedGrammarPoint() { const point = selectedPoint.value; if (!point || !confirm(`删除语法点“${point.name}”及其笔记、题目、课堂语料？此操作不可恢复。`)) return; try { await api.grammarPoints.delete(point.id); await store.reloadUnits(); const fallback = store.allGrammarPoints[0]; notesGrammarPointId.value = fallback?.id || 0; aiGrammarPointId.value = fallback?.id || 0; notesList.value = []; aiExistingQuestions.value = []; aiMessage.value = '语法点及其关联内容已删除'; } catch (err) { aiError.value = err.message; } }
 
 // ── 系统设置 ─────────────────────────────────────
 const settingGroups = ref([]);

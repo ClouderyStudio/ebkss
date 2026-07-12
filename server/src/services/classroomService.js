@@ -1,4 +1,4 @@
-import { execute, query } from '../db.js';
+import { execute, query, withTransaction } from '../db.js';
 import { classroomGraphFallback, classroomNotesGraphFallback } from '../data/classroomSeedData.js';
 import { generateClassroomKnowledgeGraph } from './aiService.js';
 
@@ -152,10 +152,11 @@ export async function getClassroomCorpusByGrammarPoint(grammarPointId) {
 export async function getClassroomGroups() {
   const rows = await query(
     `
-      SELECT group_name, COUNT(*) AS item_count
-      FROM classroom_corpus
-      GROUP BY group_name
-      ORDER BY group_name
+      SELECT corpus_groups.group_name, COUNT(items.id) AS item_count
+      FROM classroom_groups corpus_groups
+      LEFT JOIN classroom_corpus items ON items.group_name = corpus_groups.group_name
+      GROUP BY corpus_groups.group_name
+      ORDER BY corpus_groups.group_name
     `
   );
 
@@ -165,6 +166,29 @@ export async function getClassroomGroups() {
   }));
 }
 
+export async function createClassroomGroup(groupName) {
+  const group = normalizeGroupName(groupName);
+  await execute('INSERT IGNORE INTO classroom_groups (group_name) VALUES (?)', [group]);
+  return { groupName: group, itemCount: 0 };
+}
+
+export async function deleteClassroomGroup(groupName) {
+  const group = normalizeGroupName(groupName);
+
+  return withTransaction(async (connection) => {
+    const [groups] = await connection.execute('SELECT group_name FROM classroom_groups WHERE group_name = ?', [group]);
+    if (!groups.length) {
+      throw new Error('Classroom corpus group not found');
+    }
+
+    const [counts] = await connection.execute('SELECT COUNT(*) AS count FROM classroom_corpus WHERE group_name = ?', [group]);
+    await connection.execute('DELETE FROM classroom_knowledge_graphs WHERE group_name = ?', [group]);
+    await connection.execute('DELETE FROM classroom_corpus WHERE group_name = ?', [group]);
+    await connection.execute('DELETE FROM classroom_groups WHERE group_name = ?', [group]);
+    return { deleted: true, groupName: group, count: Number(counts[0].count) };
+  });
+}
+
 export async function invalidateClassroomGraph(groupName) {
   const group = normalizeGroupName(groupName);
   await execute('DELETE FROM classroom_knowledge_graphs WHERE group_name = ?', [group]);
@@ -172,6 +196,7 @@ export async function invalidateClassroomGraph(groupName) {
 
 export async function createClassroomCorpusItem(input) {
   const group = normalizeGroupName(input.groupName);
+  await execute('INSERT IGNORE INTO classroom_groups (group_name) VALUES (?)', [group]);
   const [maxRow] = await query('SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM classroom_corpus WHERE group_name = ?', [
     group
   ]);
@@ -209,6 +234,7 @@ export async function updateClassroomCorpusItem(id, input) {
   }
 
   const group = normalizeGroupName(input.groupName ?? existing.group_name);
+  await execute('INSERT IGNORE INTO classroom_groups (group_name) VALUES (?)', [group]);
   await execute(
     `
       UPDATE classroom_corpus

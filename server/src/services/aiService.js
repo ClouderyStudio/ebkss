@@ -202,7 +202,7 @@ async function chatJsonStream(requestBody, options = {}) {
   return extractJson(accumulated);
 }
 
-export async function generateQuestions({ grammarPoint, notesContent, count }) {
+export async function generateQuestions({ topic = '英语学习', notesContent, count }) {
   const data = await chatJson(
     [
       {
@@ -211,9 +211,9 @@ export async function generateQuestions({ grammarPoint, notesContent, count }) {
       },
       {
         role: 'user',
-        content: `你是英语老师。基于以下语法点和笔记内容，生成${count}道题目。
+        content: `你是英语老师。基于以下主题和笔记内容，生成${count}道题目。
 
-语法点：${grammarPoint}
+主题：${topic}
 笔记内容：${notesContent}
 
 要求：

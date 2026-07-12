@@ -23,7 +23,7 @@ export const router = createRouter({
     { path: '/teacher/quiz', name: 'teacher-quiz', component: () => import('./views/TeacherQuizView.vue') },
     { path: '/class', name: 'classroom', component: () => import('./views/TeacherQuizView.vue') },
     { path: '/student/quiz', name: 'student-quiz', component: () => import('./views/StudentQuizView.vue') },
-    { path: '/admin', name: 'admin', component: () => import('./views/AdminView.vue') },
+    { path: '/admin', name: 'admin', component: () => import('./views/ContentAdminView.vue') },
     { path: '/teacher/tools', redirect: '/admin' },
     { path: '/teacher/corpus', redirect: '/admin' }
   ]

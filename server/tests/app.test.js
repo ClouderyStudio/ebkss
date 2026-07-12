@@ -37,7 +37,17 @@ vi.mock('../src/services/quizService.js', () => ({
     accuracy: 1,
     results: []
   })),
-  saveGeneratedQuestions: vi.fn(async () => ({ insertedCount: 1, insertedIds: [9] }))
+  saveGeneratedQuestions: vi.fn(async () => ({ insertedCount: 1, insertedIds: [9] })),
+  getQuestionsByGrammarPoint: vi.fn(async () => [
+    {
+      id: 9,
+      grammarPointId: 1,
+      questionType: 'phrase',
+      questionText: '辨认出',
+      acceptableAnswers: ['make out']
+    }
+  ]),
+  deleteQuestion: vi.fn(async (id) => ({ deleted: true, id }))
 }));
 
 vi.mock('../src/services/aiService.js', () => ({
@@ -53,10 +63,30 @@ vi.mock('../src/services/aiService.js', () => ({
   ])
 }));
 
+vi.mock('../src/services/contentService.js', () => ({
+  getNotes: vi.fn(async () => []),
+  createNote: vi.fn(),
+  createNoteFromDocx: vi.fn(),
+  deleteStandaloneNote: vi.fn(),
+  generateCorpusForNote: vi.fn(),
+  generateQuestionsForNote: vi.fn(),
+  getQuestionGroups: vi.fn(async () => [{ groupName: '历史题目', itemCount: 1 }]),
+  createQuestionGroup: vi.fn(async (groupName) => ({ groupName, itemCount: 0 })),
+  deleteStandaloneQuestionGroup: vi.fn(),
+  getQuestions: vi.fn(async () => [{ id: 9, questionType: 'phrase', questionText: '辨认出', acceptableAnswers: ['make out'] }]),
+  getQuizByGroup: vi.fn(async () => [{ id: 9, questionType: 'phrase', questionText: '辨认出' }]),
+  saveQuestions: vi.fn(async () => ({ insertedCount: 1, insertedIds: [9] })),
+  deleteStandaloneQuestion: vi.fn(async (id) => ({ deleted: true, id })),
+  submitContentQuiz: vi.fn(async () => ({ recordId: 1, totalQuestions: 1, correctCount: 1, score: 100, accuracy: 1, results: [] })),
+  parseNoteEntries: vi.fn()
+}));
+
 vi.mock('../src/services/classroomService.js', () => ({
   createClassroomCorpusItem: vi.fn(async (input) => ({ id: 2, ...input, tags: input.tags, graphNodeId: 'new_word' })),
+  createClassroomGroup: vi.fn(async (groupName) => ({ groupName, itemCount: 0 })),
   updateClassroomCorpusItem: vi.fn(async (id, input) => ({ id, ...input, graphNodeId: 'updated_word' })),
   deleteClassroomCorpusItem: vi.fn(async (id) => ({ deleted: true, id })),
+  deleteClassroomGroup: vi.fn(async (groupName) => ({ deleted: true, groupName, count: 5 })),
   getClassroomCorpus: vi.fn(async () => [
     {
       id: 1,
@@ -74,7 +104,13 @@ vi.mock('../src/services/classroomService.js', () => ({
     cached: true,
     graph: { nodes: [{ id: 'give_up', name: 'give up', type: 'phrase', meaning: '放弃' }], edges: [] }
   })),
-  invalidateClassroomGraph: vi.fn(async () => undefined)
+  invalidateClassroomGraph: vi.fn(async () => undefined),
+  normalizeGroupName: vi.fn((groupName) => groupName)
+}));
+
+vi.mock('../src/services/curriculumService.js', () => ({
+  createGrammarPoint: vi.fn(async (input) => ({ id: 2, ...input })),
+  deleteGrammarPoint: vi.fn(async (id) => ({ deleted: true, id }))
 }));
 
 vi.mock('../src/services/graphService.js', () => ({
@@ -108,12 +144,12 @@ describe('api routes', () => {
     expect(response.body.database.ok).toBe(true);
   });
 
-  it('returns units and quiz questions', async () => {
-    const units = await request(app).get('/api/units').expect(200);
-    expect(units.body.units[0].grammarPoints[0].name).toBe('现在完成时');
+  it('returns question groups and quiz questions', async () => {
+    const groups = await request(app).get('/api/content/question-groups').expect(200);
+    expect(groups.body.groups[0].groupName).toBe('历史题目');
 
-    const quiz = await request(app).get('/api/quiz/1?count=4&mode=student').expect(200);
-    expect(quiz.body.questions[0].questionType).toBe('translation');
+    const quiz = await request(app).get('/api/content/quiz?group=历史题目&count=4').expect(200);
+    expect(quiz.body.questions[0].questionType).toBe('phrase');
   });
 
   it('returns classroom corpus, tts urls, and classroom graphs', async () => {
@@ -131,6 +167,9 @@ describe('api routes', () => {
   });
 
   it('manages classroom corpus items', async () => {
+    const group = await request(app).post('/api/corpus/groups').send({ groupName: 'new-group' }).expect(201);
+    expect(group.body.group.groupName).toBe('new-group');
+
     const created = await request(app)
       .post('/api/corpus')
       .send({ english: 'new word', chinese: '新词', groupName: 'class-notes', tags: ['phrase'] })
@@ -150,31 +189,28 @@ describe('api routes', () => {
     expect(invalidated.body.invalidated).toBe(true);
   });
 
-  it('submits answers and saves generated corpus', async () => {
+  it('submits answers and manages question groups', async () => {
     const submit = await request(app)
-      .post('/api/submit')
-      .send({ unitId: 1, answers: [{ questionId: 1, answer: 'over the past few years' }] })
+      .post('/api/content/submit')
+      .send({ questionGroup: '历史题目', answers: [{ questionId: 9, answer: 'make out' }] })
       .expect(200);
     expect(submit.body.score).toBe(100);
 
-    const save = await request(app)
-      .post('/api/corpus/bulk')
-      .send({
-        grammarPointId: 1,
-        questions: [{ questionType: 'phrase', questionText: '辨认出', acceptableAnswers: ['make out'] }]
-      })
-      .expect(200);
-    expect(save.body.insertedCount).toBe(1);
+    const questions = await request(app).get('/api/content/questions?group=历史题目').expect(200);
+    expect(questions.body.questions[0].id).toBe(9);
+
+    const deleted = await request(app).delete('/api/content/questions/9').expect(200);
+    expect(deleted.body.deleted).toBe(true);
   });
 
   it('generates questions and returns graphs', async () => {
     const generated = await request(app)
       .post('/api/ai/generate')
-      .send({ grammarPointId: 1, count: 1 })
+      .send({ topic: '现在完成时', count: 1 })
       .expect(200);
     expect(generated.body.questions[0].acceptableAnswers).toEqual(['make out']);
 
-    const graph = await request(app).get('/api/graph/1').expect(200);
-    expect(graph.body.graph.nodes[0].name).toBe('现在完成时');
+    const graph = await request(app).get('/api/graph?group=give').expect(200);
+    expect(graph.body.graph.nodes[0].id).toBe('give_up');
   });
 });

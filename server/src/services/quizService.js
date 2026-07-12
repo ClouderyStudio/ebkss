@@ -89,6 +89,26 @@ export async function getQuiz(unitId, { count = 4, mode = 'student' } = {}) {
   return rows.map((row) => mapCorpusRow(row, { includeAnswers }));
 }
 
+export async function getQuestionsByGrammarPoint(grammarPointId) {
+  const rows = await query(
+    `SELECT * FROM corpus WHERE grammar_point_id = ? ORDER BY created_at DESC, id DESC`,
+    [grammarPointId]
+  );
+  return rows.map((row) => mapCorpusRow(row, { includeAnswers: true }));
+}
+
+export async function deleteQuestion(questionId) {
+  return withTransaction(async (connection) => {
+    const [questions] = await connection.execute('SELECT id FROM corpus WHERE id = ?', [questionId]);
+    if (!questions.length) {
+      throw new Error('Question not found');
+    }
+    await connection.execute('DELETE FROM quiz_record_answers WHERE corpus_id = ?', [questionId]);
+    await connection.execute('DELETE FROM corpus WHERE id = ?', [questionId]);
+    return { deleted: true, id: questionId };
+  });
+}
+
 export async function getCorpusByIds(questionIds) {
   if (questionIds.length === 0) {
     return [];
@@ -260,4 +280,3 @@ export async function saveGeneratedQuestions(payload) {
 
   return { insertedCount: insertedIds.length, insertedIds };
 }
-

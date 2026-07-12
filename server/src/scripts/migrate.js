@@ -103,6 +103,11 @@ async function migrate() {
     await addColumnIfMissing(connection, 'corpus', 'source_key', 'VARCHAR(120)');
     await addColumnIfMissing(connection, 'classroom_corpus', 'grammar_point_id', 'INT');
     await addColumnIfMissing(connection, 'classroom_corpus', 'source_key', 'VARCHAR(120)');
+    await addColumnIfMissing(connection, 'corpus', 'question_group', 'VARCHAR(100) NULL');
+    await addColumnIfMissing(connection, 'quiz_records', 'question_group', 'VARCHAR(100) NULL');
+    await connection.query('ALTER TABLE imported_notes MODIFY grammar_point_id INT NULL');
+    await connection.query('ALTER TABLE corpus MODIFY unit_id INT NULL, MODIFY grammar_point_id INT NULL');
+    await connection.query('ALTER TABLE quiz_records MODIFY unit_id INT NULL');
 
     await connection.query(`
       CREATE TABLE IF NOT EXISTS quiz_records (
@@ -150,6 +155,37 @@ async function migrate() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_cc_grammar_point (grammar_point_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS classroom_groups (
+        group_name VARCHAR(100) PRIMARY KEY,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS question_groups (
+        group_name VARCHAR(100) PRIMARY KEY,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await connection.query(`
+      UPDATE corpus c
+      LEFT JOIN grammar_points gp ON gp.id = c.grammar_point_id
+      SET c.question_group = COALESCE(c.question_group, CONCAT('历史题目-', COALESCE(gp.name, c.grammar_point_id, '未分组')))
+      WHERE c.question_group IS NULL OR c.question_group = ''
+    `);
+
+    await connection.query(`
+      INSERT IGNORE INTO question_groups (group_name)
+      SELECT DISTINCT question_group FROM corpus WHERE question_group IS NOT NULL AND question_group <> ''
+    `);
+
+    await connection.query(`
+      INSERT IGNORE INTO classroom_groups (group_name)
+      SELECT DISTINCT group_name FROM classroom_corpus
     `);
 
     await connection.query(`

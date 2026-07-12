@@ -4,11 +4,30 @@ import { z } from 'zod';
 import { execute, pingDatabase, query } from './db.js';
 import { config } from './config.js';
 import { generateQuestions, parseEnglishNotes } from './services/aiService.js';
-import { signToken, verifyToken, requireAuth as _requireAuth } from './services/authService.js';
+import {
+  createNote,
+  createNoteFromDocx,
+  createQuestionGroup as createStandaloneQuestionGroup,
+  deleteStandaloneNote,
+  deleteStandaloneQuestion,
+  deleteStandaloneQuestionGroup,
+  generateCorpusForNote,
+  generateQuestionsForNote,
+  getNotes,
+  getQuestionGroups as getStandaloneQuestionGroups,
+  getQuestions as getStandaloneQuestions,
+  getQuizByGroup,
+  parseNoteEntries,
+  saveQuestions,
+  submitContentQuiz
+} from './services/contentService.js';
+import { signToken, verifyToken } from './services/authService.js';
 import { getAllSettings, getGroupedSettings, updateSettings } from './services/settingsService.js';
 import {
   createClassroomCorpusItem,
+  createClassroomGroup,
   deleteClassroomCorpusItem,
+  deleteClassroomGroup,
   getClassroomCorpus,
   getClassroomCorpusByGrammarPoint,
   getClassroomGraph,
@@ -16,20 +35,6 @@ import {
   invalidateClassroomGraph,
   updateClassroomCorpusItem
 } from './services/classroomService.js';
-import { getKnowledgeGraph } from './services/graphService.js';
-import {
-  deleteCorpusForGrammarPoint,
-  deleteNote,
-  generateCorpusFromNote,
-  generateQuestionsFromNote,
-  getImportedNotes,
-  getNoteById,
-  getNotesOverview,
-  importNotes,
-  importNotesFromDocx,
-  parseNoteToEntries
-} from './services/notesService.js';
-import { getQuiz, getUnits, saveGeneratedQuestions, submitQuiz } from './services/quizService.js';
 import { getOrCreateSpeech } from './services/ttsService.js';
 import { parseDocx } from './utils/docxParser.js';
 import { parseNotesLines } from './utils/notesParser.js';
@@ -152,12 +157,80 @@ export function createApp() {
     });
   });
 
-  app.get('/api/units', async (_req, res, next) => {
+  // ── 独立笔记、语料、题目模型 ─────────────────────────
+  app.get('/api/content/notes', async (_req, res, next) => {
+    try { res.json({ notes: await getNotes() }); } catch (error) { next(error); }
+  });
+
+  app.post('/api/content/notes', async (req, res, next) => {
     try {
-      res.json({ units: await getUnits() });
-    } catch (error) {
-      next(error);
-    }
+      const input = z.object({ title: z.string().max(200).optional().default(''), rawContent: z.string().min(1) }).parse(req.body);
+      res.status(201).json({ note: await createNote(input) });
+    } catch (error) { next(error); }
+  });
+
+  app.post('/api/content/notes/import-docx', async (req, res, next) => {
+    try {
+      const input = z.object({ title: z.string().max(200).optional().default(''), file: z.string().min(1) }).parse(req.body);
+      const lines = await parseDocx(Buffer.from(input.file, 'base64'));
+      if (!lines.length) throw new Error('Word 文件内容为空或无法解析');
+      res.status(201).json({ note: await createNoteFromDocx({ title: input.title, rawContent: lines.join('\n') }) });
+    } catch (error) { next(error); }
+  });
+
+  app.delete('/api/content/notes/:id', async (req, res, next) => {
+    try { const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params); res.json(await deleteStandaloneNote(id)); } catch (error) { next(error); }
+  });
+
+  app.post('/api/content/notes/:id/generate-corpus', async (req, res, next) => {
+    try {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      const input = z.object({ groupName: z.string().trim().min(1).max(100), mode: z.enum(['rule', 'ai']).default('ai') }).parse(req.body);
+      res.json({ result: await generateCorpusForNote(id, input.groupName, input.mode) });
+    } catch (error) { next(error); }
+  });
+
+  app.post('/api/content/notes/:id/generate-questions', async (req, res, next) => {
+    try {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      const input = z.object({ questionGroup: z.string().trim().min(1).max(100), count: z.coerce.number().int().min(1).max(12).default(4) }).parse(req.body);
+      res.json(await generateQuestionsForNote(id, input.questionGroup, input.count));
+    } catch (error) { next(error); }
+  });
+
+  app.get('/api/content/question-groups', async (_req, res, next) => {
+    try { res.json({ groups: await getStandaloneQuestionGroups() }); } catch (error) { next(error); }
+  });
+
+  app.post('/api/content/question-groups', async (req, res, next) => {
+    try { const { groupName } = z.object({ groupName: z.string().trim().min(1).max(100) }).parse(req.body); res.status(201).json({ group: await createStandaloneQuestionGroup(groupName) }); } catch (error) { next(error); }
+  });
+
+  app.delete('/api/content/question-groups/:groupName', async (req, res, next) => {
+    try { const { groupName } = z.object({ groupName: z.string().trim().min(1) }).parse(req.params); res.json(await deleteStandaloneQuestionGroup(groupName)); } catch (error) { next(error); }
+  });
+
+  app.get('/api/content/questions', async (req, res, next) => {
+    try { const { group } = z.object({ group: z.string().trim().min(1) }).parse(req.query); res.json({ questions: await getStandaloneQuestions(group) }); } catch (error) { next(error); }
+  });
+
+  app.get('/api/content/quiz', async (req, res, next) => {
+    try {
+      const input = z.object({ group: z.string().trim().min(1), count: z.coerce.number().int().min(1).max(20).optional() }).parse(req.query);
+      res.json({ questions: await getQuizByGroup(input.group, input.count) });
+    } catch (error) { next(error); }
+  });
+
+  app.post('/api/content/submit', async (req, res, next) => {
+    try { res.json(await submitContentQuiz(req.body)); } catch (error) { next(error); }
+  });
+
+  app.post('/api/content/questions', async (req, res, next) => {
+    try { res.status(201).json(await saveQuestions(req.body)); } catch (error) { next(error); }
+  });
+
+  app.delete('/api/content/questions/:id', async (req, res, next) => {
+    try { const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params); res.json(await deleteStandaloneQuestion(id)); } catch (error) { next(error); }
   });
 
   app.get('/api/corpus', async (req, res, next) => {
@@ -177,6 +250,15 @@ export function createApp() {
   app.get('/api/corpus/groups', async (_req, res, next) => {
     try {
       res.json({ groups: await getClassroomGroups() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/corpus/groups', async (req, res, next) => {
+    try {
+      const { groupName } = z.object({ groupName: z.string().trim().min(1).max(100) }).parse(req.body);
+      res.status(201).json({ group: await createClassroomGroup(groupName) });
     } catch (error) {
       next(error);
     }
@@ -214,15 +296,7 @@ export function createApp() {
   app.delete('/api/corpus/group/:groupName', async (req, res, next) => {
     try {
       const { groupName } = z.object({ groupName: z.string().trim().min(1) }).parse(req.params);
-      const result = await query('SELECT COUNT(*) AS count FROM classroom_corpus WHERE group_name = ?', [groupName]);
-      const count = Number(result[0]?.count || 0);
-      if (count === 0) {
-        res.status(404).json({ error: `语料组 "${groupName}" 不存在` });
-        return;
-      }
-      await query('DELETE FROM classroom_corpus WHERE group_name = ?', [groupName]);
-      await query('DELETE FROM classroom_knowledge_graphs WHERE group_name = ?', [groupName]);
-      res.json({ deleted: true, groupName, count });
+      res.json(await deleteClassroomGroup(groupName));
     } catch (error) {
       next(error);
     }
@@ -389,125 +463,6 @@ export function createApp() {
     res.end();
   });
 
-  // ── 笔记管理 ──────────────────────────────────────
-  // 获取笔记总览（所有语法点的笔记数量）
-  app.get('/api/notes/overview', async (_req, res, next) => {
-    try {
-      res.json({ overview: await getNotesOverview() });
-    } catch (error) { next(error); }
-  });
-
-  // 获取某个语法点的所有笔记
-  app.get('/api/notes', async (req, res, next) => {
-    try {
-      const { grammarPointId } = z.object({
-        grammarPointId: z.coerce.number().int().positive()
-      }).parse(req.query);
-      res.json({ notes: await getImportedNotes(grammarPointId) });
-    } catch (error) { next(error); }
-  });
-
-  // 获取单条笔记详情
-  app.get('/api/notes/:id', async (req, res, next) => {
-    try {
-      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
-      res.json({ note: await getNoteById(id) });
-    } catch (error) { next(error); }
-  });
-
-  // 导入文本笔记
-  const importNoteSchema = z.object({
-    grammarPointId: z.coerce.number().int().positive(),
-    rawContent: z.string().min(1),
-    title: z.string().optional().default(''),
-    sourceKey: z.string().optional()
-  });
-
-  app.post('/api/notes', async (req, res, next) => {
-    try {
-      const input = importNoteSchema.parse(req.body);
-      res.status(201).json({ note: await importNotes(input) });
-    } catch (error) { next(error); }
-  });
-
-  // 导入 docx 笔记
-  const importDocxNoteSchema = z.object({
-    grammarPointId: z.coerce.number().int().positive(),
-    file: z.string().min(1),
-    title: z.string().optional().default('')
-  });
-
-  app.post('/api/notes/import-docx', async (req, res, next) => {
-    try {
-      const { grammarPointId, file, title } = importDocxNoteSchema.parse(req.body);
-      res.status(201).json({ note: await importNotesFromDocx(grammarPointId, file, title) });
-    } catch (error) { next(error); }
-  });
-
-  // 从笔记解析语料条目（预览，不写入）
-  app.post('/api/notes/:id/parse', async (req, res, next) => {
-    try {
-      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
-      const { mode } = z.object({ mode: z.enum(['rule', 'ai']).default('ai') }).parse(req.body);
-      res.json({ entries: await parseNoteToEntries(id, mode) });
-    } catch (error) { next(error); }
-  });
-
-  // 从笔记生成课堂语料（解析 + 写入 classroom_corpus）
-  const generateCorpusSchema = z.object({
-    mode: z.enum(['rule', 'ai']).default('ai')
-  });
-
-  app.post('/api/notes/:id/generate-corpus', async (req, res, next) => {
-    try {
-      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
-      const { mode } = generateCorpusSchema.parse(req.body);
-      res.json({ result: await generateCorpusFromNote(id, mode) });
-    } catch (error) { next(error); }
-  });
-
-  // 从笔记生成题目
-  const generateQuestionsSchema = z.object({
-    count: z.coerce.number().int().min(1).max(12).default(4)
-  });
-
-  app.post('/api/notes/:id/generate-questions', async (req, res, next) => {
-    try {
-      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
-      const { count } = generateQuestionsSchema.parse(req.body);
-      res.json(await generateQuestionsFromNote(id, count));
-    } catch (error) { next(error); }
-  });
-
-  // 删除笔记
-  app.delete('/api/notes/:id', async (req, res, next) => {
-    try {
-      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
-      res.json(await deleteNote(id));
-    } catch (error) { next(error); }
-  });
-
-  // 获取某个语法点的课堂语料
-  app.get('/api/corpus/by-grammar', async (req, res, next) => {
-    try {
-      const { grammarPointId } = z.object({
-        grammarPointId: z.coerce.number().int().positive()
-      }).parse(req.query);
-      res.json({ items: await getClassroomCorpusByGrammarPoint(grammarPointId) });
-    } catch (error) { next(error); }
-  });
-
-  // 删除某个语法点的所有课堂语料
-  app.delete('/api/corpus/by-grammar', async (req, res, next) => {
-    try {
-      const { grammarPointId } = z.object({
-        grammarPointId: z.coerce.number().int().positive()
-      }).parse(req.query);
-      await deleteCorpusForGrammarPoint(grammarPointId);
-      res.json({ deleted: true, grammarPointId });
-    } catch (error) { next(error); }
-  });
-
   app.delete('/api/graph', async (req, res, next) => {
     try {
       const input = z
@@ -538,64 +493,19 @@ export function createApp() {
     }
   });
 
-  app.get('/api/quiz/:unitId', async (req, res, next) => {
-    try {
-      const params = z.object({ unitId: z.coerce.number().int().positive() }).parse(req.params);
-      const queryParams = z
-        .object({
-          count: z.coerce.number().int().positive().max(20).optional(),
-          mode: z.enum(['teacher', 'student']).optional().default('student')
-        })
-        .parse(req.query);
-
-      res.json({ questions: await getQuiz(params.unitId, queryParams) });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.post('/api/submit', async (req, res, next) => {
-    try {
-      res.json(await submitQuiz(req.body));
-    } catch (error) {
-      next(error);
-    }
-  });
-
   app.post('/api/ai/generate', async (req, res, next) => {
     try {
       const input = z
         .object({
-          grammarPointId: z.coerce.number().int().positive(),
+          topic: z.string().trim().min(1).optional().default('英语学习'),
           notesContent: z.string().optional(),
           count: z.coerce.number().int().min(1).max(12).default(4)
         })
         .parse(req.body);
 
-      const [grammarPoint] = await query('SELECT name, notes_content FROM grammar_points WHERE id = ?', [
-        input.grammarPointId
-      ]);
-
-      if (!grammarPoint) {
-        res.status(404).json({ error: 'Grammar point not found' });
-        return;
-      }
-
-      const questions = await generateQuestions({
-        grammarPoint: grammarPoint.name,
-        notesContent: input.notesContent || grammarPoint.notes_content || '',
-        count: input.count
-      });
+      const questions = await generateQuestions({ topic: input.topic, notesContent: input.notesContent || '', count: input.count });
 
       res.json({ questions });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.post('/api/corpus/bulk', async (req, res, next) => {
-    try {
-      res.json(await saveGeneratedQuestions(req.body));
     } catch (error) {
       next(error);
     }
@@ -610,15 +520,6 @@ export function createApp() {
         .parse(req.query);
 
       res.json(await getClassroomGraph(input.group));
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.get('/api/graph/:grammarPointId', async (req, res, next) => {
-    try {
-      const params = z.object({ grammarPointId: z.coerce.number().int().positive() }).parse(req.params);
-      res.json(await getKnowledgeGraph(params.grammarPointId));
     } catch (error) {
       next(error);
     }

@@ -29,9 +29,28 @@ async function request(path, options = {}) {
 
 export const api = {
   health: () => request('/api/health'),
-  units: () => request('/api/units'),
+  content: {
+    notes: () => request('/api/content/notes'),
+    createNote: (payload) => request('/api/content/notes', { method: 'POST', body: JSON.stringify(payload) }),
+    deleteNote: (id) => request(`/api/content/notes/${id}`, { method: 'DELETE' }),
+    generateCorpus: (id, payload) => request(`/api/content/notes/${id}/generate-corpus`, { method: 'POST', body: JSON.stringify(payload) }),
+    generateQuestions: (id, payload) => request(`/api/content/notes/${id}/generate-questions`, { method: 'POST', body: JSON.stringify(payload) }),
+    questionGroups: () => request('/api/content/question-groups'),
+    createQuestionGroup: (groupName) => request('/api/content/question-groups', { method: 'POST', body: JSON.stringify({ groupName }) }),
+    deleteQuestionGroup: (groupName) => request(`/api/content/question-groups/${encodeURIComponent(groupName)}`, { method: 'DELETE' }),
+    questions: (group) => request(`/api/content/questions?group=${encodeURIComponent(group)}`),
+    quiz: (group, count = 8) => request(`/api/content/quiz?group=${encodeURIComponent(group)}&count=${count}`),
+    submit: (payload) => request('/api/content/submit', { method: 'POST', body: JSON.stringify(payload) }),
+    saveQuestions: (payload) => request('/api/content/questions', { method: 'POST', body: JSON.stringify(payload) }),
+    deleteQuestion: (id) => request(`/api/content/questions/${id}`, { method: 'DELETE' })
+  },
   classroomCorpus: (group = 'give') => request(`/api/corpus?group=${encodeURIComponent(group)}`),
   classroomGroups: () => request('/api/corpus/groups'),
+  createClassroomGroup: (groupName) =>
+    request('/api/corpus/groups', {
+      method: 'POST',
+      body: JSON.stringify({ groupName })
+    }),
   createClassroomItem: (payload) =>
     request('/api/corpus', {
       method: 'POST',
@@ -61,20 +80,8 @@ export const api = {
     return request(`/api/tts?${params.toString()}`);
   },
   classroomGraph: (group = 'give') => request(`/api/graph?group=${encodeURIComponent(group)}`),
-  quiz: (unitId, { count = 4, mode = 'student' } = {}) =>
-    request(`/api/quiz/${unitId}?count=${count}&mode=${mode}`),
-  submit: (payload) =>
-    request('/api/submit', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    }),
   generate: (payload) =>
     request('/api/ai/generate', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    }),
-  saveCorpus: (payload) =>
-    request('/api/corpus/bulk', {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
@@ -103,66 +110,6 @@ export const api = {
       body: JSON.stringify({ file: base64, groupName, mode })
     });
   },
-  graph: (grammarPointId) => request(`/api/graph/${grammarPointId}`),
-
-  // ── 笔记管理 ─────────────────────────────────
-  notes: {
-    /** 获取笔记总览（按语法点分组计数） */
-    overview: () => request('/api/notes/overview'),
-    /** 获取某个语法点的所有笔记 */
-    list: (grammarPointId) => request(`/api/notes?grammarPointId=${grammarPointId}`),
-    /** 获取单条笔记详情 */
-    get: (id) => request(`/api/notes/${id}`),
-    /** 导入文本笔记 */
-    import: ({ grammarPointId, rawContent, title, sourceKey }) =>
-      request('/api/notes', {
-        method: 'POST',
-        body: JSON.stringify({ grammarPointId, rawContent, title, sourceKey })
-      }),
-    /** 导入 docx 文件笔记 */
-    importDocx: async (grammarPointId, file, title = '') => {
-      const buffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = '';
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64 = btoa(binary);
-      return request('/api/notes/import-docx', {
-        method: 'POST',
-        body: JSON.stringify({ grammarPointId, file: base64, title })
-      });
-    },
-    /** 解析笔记为语料条目（预览） */
-    parse: (id, mode = 'ai') =>
-      request(`/api/notes/${id}/parse`, {
-        method: 'POST',
-        body: JSON.stringify({ mode })
-      }),
-    /** 从笔记生成课堂语料 */
-    generateCorpus: (id, mode = 'ai') =>
-      request(`/api/notes/${id}/generate-corpus`, {
-        method: 'POST',
-        body: JSON.stringify({ mode })
-      }),
-    /** 从笔记生成题目 */
-    generateQuestions: (id, count = 4) =>
-      request(`/api/notes/${id}/generate-questions`, {
-        method: 'POST',
-        body: JSON.stringify({ count })
-      }),
-    /** 删除笔记 */
-    delete: (id) => request(`/api/notes/${id}`, { method: 'DELETE' })
-  },
-
-  /** 按语法点获取课堂语料 */
-  corpusByGrammarPoint: (grammarPointId) =>
-    request(`/api/corpus/by-grammar?grammarPointId=${grammarPointId}`),
-
-  /** 删除某个语法点的所有课堂语料 */
-  deleteCorpusByGrammarPoint: (grammarPointId) =>
-    request(`/api/corpus/by-grammar?grammarPointId=${grammarPointId}`, { method: 'DELETE' }),
-
   // ── 系统设置 ─────────────────────────────────
   settings: {
     getAll: () =>

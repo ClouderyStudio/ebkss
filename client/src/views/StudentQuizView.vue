@@ -8,7 +8,7 @@
         </div>
 
         <div class="form-grid">
-          <UnitSelect v-if="store.units.length" v-model="selectedUnitId" :units="store.units" />
+          <label class="field"><span>题目组</span><select v-model="selectedGroup"><option v-for="group in groups" :key="group.groupName" :value="group.groupName">{{ group.groupName }}</option></select></label>
           <label class="field">
             <span>姓名</span>
             <input v-model="studentName" placeholder="可不填" />
@@ -74,16 +74,11 @@
 <script setup>
 import { CircleCheck, PenLine, RefreshCw, Send } from '@lucide/vue';
 import { onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
 import { api } from '../api.js';
 import AppShell from '../components/AppShell.vue';
 import QuestionTypeBadge from '../components/QuestionTypeBadge.vue';
-import UnitSelect from '../components/UnitSelect.vue';
-import { useUnitsStore } from '../stores/units.js';
-
-const route = useRoute();
-const store = useUnitsStore();
-const selectedUnitId = ref(Number(route.query.unitId) || 0);
+const groups = ref([]);
+const selectedGroup = ref('');
 const studentName = ref('');
 const questions = ref([]);
 const answers = ref({});
@@ -92,7 +87,7 @@ const result = ref(null);
 const submitting = ref(false);
 
 async function loadQuiz() {
-  if (!selectedUnitId.value) {
+  if (!selectedGroup.value) {
     return;
   }
 
@@ -100,7 +95,7 @@ async function loadQuiz() {
   result.value = null;
 
   try {
-    const data = await api.quiz(selectedUnitId.value, { count: 8, mode: 'student' });
+    const data = await api.content.quiz(selectedGroup.value, 8);
     questions.value = data.questions || [];
     answers.value = Object.fromEntries(questions.value.map((question) => [question.id, '']));
   } catch (err) {
@@ -113,8 +108,8 @@ async function submit() {
   error.value = '';
 
   try {
-    result.value = await api.submit({
-      unitId: selectedUnitId.value,
+    result.value = await api.content.submit({
+      questionGroup: selectedGroup.value,
       studentName: studentName.value || undefined,
       mode: 'student',
       answers: questions.value.map((question) => ({
@@ -129,14 +124,11 @@ async function submit() {
   }
 }
 
-watch(selectedUnitId, loadQuiz);
+watch(selectedGroup, loadQuiz);
 
 onMounted(async () => {
-  await store.loadUnits();
-  if (!selectedUnitId.value && store.firstUnit) {
-    selectedUnitId.value = store.firstUnit.id;
-  } else {
-    loadQuiz();
-  }
+  const data = await api.content.questionGroups();
+  groups.value = data.groups || [];
+  selectedGroup.value = groups.value[0]?.groupName || '';
 });
 </script>
