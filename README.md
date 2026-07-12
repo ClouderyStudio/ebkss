@@ -191,3 +191,7 @@ npm start               # 启动 Express（端口 3000）
 ---
 
 > 部署域名：`es.cldery.com`
+
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0 only. See [LICENSE](LICENSE).

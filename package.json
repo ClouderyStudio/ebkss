@@ -2,6 +2,7 @@
   "name": "english-basical-knowledge-study-system",
   "private": true,
   "version": "0.1.0",
+  "license": "AGPL-3.0-only",
   "description": "课堂英语基础知识快速检测系统原型",
   "type": "module",
   "workspaces": [
