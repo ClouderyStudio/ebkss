@@ -152,6 +152,18 @@ npm start               # 启动 Express（端口 3000）
 
 生产环境可设 `SERVE_CLIENT=false` 关闭内置前端（由 Nginx 提供）。
 
+### 前端部署到 Netlify
+
+仓库已包含根目录 `netlify.toml`，会构建 `client` 工作区并发布 `client/dist`。Netlify 只托管静态前端；浏览器通过 HTTPS 请求部署在你服务器上的 Node.js API，后端再访问 MySQL、AI 和 TTS 服务。
+
+1. 为后端配置公网 HTTPS 地址，例如 `https://api.example.com`，并在服务器上运行迁移、种子数据和 Node.js 服务。
+2. 在 Netlify 选择 **Add new project**，导入此 Git 仓库；构建命令为 `npm run build -w client`，发布目录为 `client/dist`。
+3. 在 Netlify 的 **Environment variables** 添加 `VITE_API_BASE=https://api.example.com`，不要以 `/` 结尾，然后重新部署。该变量会写入前端构建产物，只能包含公开的 API 地址。
+4. 在服务器数据库的 `settings` 表把 `app_client_origin` 设为 Netlify 域名，例如 `https://your-site.netlify.app`；同时把 `app_serve_client` 设为 `false` 并重启后端。使用自定义前端域名后，将该值更新为自定义域名。
+5. 部署后测试首页、答题、TTS 和 Word 导入。TTS 的相对音频地址会自动使用 `VITE_API_BASE` 指向后端。
+
+数据库连接信息、JWT 密钥、AI Key 和 TTS Key 只能保留在服务器的 `.env` 或数据库设置表中，不能添加到 Netlify 环境变量或任何 `VITE_*` 变量。
+
 ---
 
 ## Scripts

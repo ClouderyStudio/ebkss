@@ -179,7 +179,7 @@ import {
   X
 } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { api } from '../api.js';
+import { api, API_BASE } from '../api.js';
 import GraphPanel from '../components/GraphPanel.vue';
 import { CLASSROOM_CONFIG } from '../config.js';
 
@@ -316,6 +316,10 @@ function resolveAudioUrl(url) {
 
   if (/^https?:\/\//i.test(url)) {
     return url;
+  }
+
+  if (API_BASE) {
+    return `${API_BASE.replace(/\/$/, '')}${url}`;
   }
 
   if (import.meta.env.DEV) {

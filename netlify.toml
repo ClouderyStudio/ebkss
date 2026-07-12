@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build -w client"
+  publish = "client/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Vue Router uses history mode, so non-file routes must resolve to the SPA.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
