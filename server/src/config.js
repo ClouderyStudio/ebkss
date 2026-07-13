@@ -50,6 +50,7 @@ export async function loadConfigFromDb(queryFn) {
     runtime.aiModel = map.ai_model || null;
     runtime.aiNotesModel = map.ai_notes_model || null;
     runtime.aiTimeoutMs = map.ai_timeout_ms ? toInt(map.ai_timeout_ms) : null;
+    runtime.aiThinkingBudget = map.ai_thinking_budget !== undefined ? toInt(map.ai_thinking_budget, 1024) : null;
 
     // ── TTS ──
     runtime.ttsApiKey = map.tts_api_key || null;
@@ -85,6 +86,7 @@ export function refreshRuntimeConfig(settingsMap) {
   if (map.ai_model !== undefined) runtime.aiModel = map.ai_model;
   if (map.ai_notes_model !== undefined) runtime.aiNotesModel = map.ai_notes_model;
   if (map.ai_timeout_ms !== undefined) runtime.aiTimeoutMs = toInt(map.ai_timeout_ms);
+  if (map.ai_thinking_budget !== undefined) runtime.aiThinkingBudget = toInt(map.ai_thinking_budget, 1024);
   if (map.tts_api_key !== undefined) runtime.ttsApiKey = map.tts_api_key;
   if (map.tts_model !== undefined) runtime.ttsModel = map.tts_model;
   if (map.tts_voice !== undefined) runtime.ttsVoice = map.tts_voice;
@@ -135,6 +137,9 @@ export const config = {
     },
     get timeoutMs() {
       return runtime.aiTimeoutMs ?? toInt(process.env.AI_TIMEOUT_MS, 12000);
+    },
+    get thinkingBudget() {
+      return runtime.aiThinkingBudget ?? toInt(process.env.AI_THINKING_BUDGET, 1024);
     }
   },
 

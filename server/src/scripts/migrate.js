@@ -239,6 +239,7 @@ async function migrate() {
       ['ai_model', 'deepseek-ai/DeepSeek-V4-Flash', '默认 AI 模型'],
       ['ai_notes_model', 'Qwen/Qwen3-32B', '笔记解析专用模型'],
       ['ai_timeout_ms', '12000', 'AI 请求超时（毫秒）'],
+      ['ai_thinking_budget', '1024', 'AI 思考上限（token，0=关闭）'],
       ['tts_api_key', '', 'DashScope API Key'],
       ['tts_model', 'qwen3-tts-vd-2026-01-26', 'TTS 模型'],
       ['tts_voice', '沉稳清晰的女教师声音', 'TTS 音色描述'],

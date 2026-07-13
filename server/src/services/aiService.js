@@ -75,6 +75,10 @@ async function chatJson(messages, options = {}) {
     max_tokens: options.maxTokens ?? 1600
   };
 
+  if (Number.isFinite(options.thinkingBudget) && options.thinkingBudget > 0) {
+    requestBody.thinking_budget = Math.floor(options.thinkingBudget);
+  }
+
   // JSON 模式
   if (options.jsonMode) {
     requestBody.response_format = { type: 'json_object' };
@@ -258,6 +262,7 @@ export async function generateQuestionsStream({ topic = '英语学习', notesCon
     maxTokens: 4096,
     stream: true,
     inactivityTimeoutMs: 60000,
+    thinkingBudget: config.ai.thinkingBudget,
     onDelta,
     signal
   });
@@ -443,8 +448,8 @@ export async function parseEnglishNotesStream({ notesText, groupName, onDelta, o
 async function parseEnglishNotesInternal({ notesText, groupName, onDelta, onProgress, signal }) {
   // 每条语料包含翻译、音标和标签；小批次避免 JSON 在输出上限处被截断。
   const lines = notesText.split('\n').filter(Boolean);
-  const chunkSize = 8;
-  const maxTokens = 4096;
+  const chunkSize = 6;
+  const maxTokens = 8192;
   const allEntries = [];
 
   for (let i = 0; i < lines.length; i += chunkSize) {
@@ -478,6 +483,7 @@ Group: ${groupName}`
           jsonMode: true,
           stream: true,
           inactivityTimeoutMs: 60000,
+          thinkingBudget: config.ai.thinkingBudget,
           onDelta,
           signal
         }

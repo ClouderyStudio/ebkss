@@ -64,18 +64,18 @@
     <Teleport to="body"><div v-if="showNoteEditor" class="modal-backdrop" @click.self="showNoteEditor = false"><form class="modal-panel" @submit.prevent="saveNoteEdit"><div class="modal-header"><h2>编辑笔记</h2><button class="icon-button" type="button" title="关闭" @click="showNoteEditor = false"><X :size="20" /></button></div><div class="modal-body"><label class="field"><span>标题</span><input v-model.trim="noteEditForm.title" placeholder="可选" /></label><label class="field"><span>内容 *</span><textarea v-model.trim="noteEditForm.rawContent" rows="7" required /></label><button class="primary-button" type="submit" :disabled="savingNoteEdit"><Save :size="18" />{{ savingNoteEdit ? '保存中...' : '保存更改' }}</button></div></form></div></Teleport>
     <Teleport to="body"><div v-if="showCorpusForm" class="modal-backdrop" @click.self="showCorpusForm = false"><form class="modal-panel" @submit.prevent="saveCorpus"><div class="modal-header"><h2>{{ editingCorpusId ? '编辑语料' : '新增语料' }}</h2><button class="icon-button" type="button" title="关闭" @click="showCorpusForm = false"><X :size="20" /></button></div><div class="modal-body"><label class="field"><span>英语 *</span><input v-model.trim="corpusForm.english" required /></label><label class="field"><span>中文</span><input v-model.trim="corpusForm.chinese" /></label><label class="field"><span>英文解释</span><textarea v-model.trim="corpusForm.englishExplain" rows="2" /></label><label class="field"><span>音标</span><input v-model.trim="corpusForm.phonetic" /></label><label class="field"><span>标签（逗号分隔）</span><input v-model="corpusForm.tagsText" /></label><button class="primary-button" type="submit" :disabled="savingCorpus"><Save :size="18" />{{ savingCorpus ? '保存中...' : '保存' }}</button></div></form></div></Teleport>
     <Teleport to="body"><div v-if="showQuestionEditor" class="modal-backdrop" @click.self="showQuestionEditor = false"><form class="modal-panel" @submit.prevent="saveQuestionEdit"><div class="modal-header"><h2>编辑题目</h2><button class="icon-button" type="button" title="关闭" @click="showQuestionEditor = false"><X :size="20" /></button></div><div class="modal-body"><label class="field"><span>题型</span><select v-model="questionEditForm.questionType"><option value="collocation">固定搭配</option><option value="translation">中英互译</option><option value="synonym">同义词</option><option value="analogy">类似结构</option><option value="morphology">词形变化</option><option value="phrase">短语</option></select></label><label class="field"><span>题干 *</span><textarea v-model.trim="questionEditForm.questionText" rows="3" required /></label><label class="field"><span>可接受答案（每行一个）*</span><textarea v-model="questionEditForm.answersText" rows="3" required /></label><label v-if="questionEditForm.questionType === 'analogy'" class="field"><span>模板句</span><input v-model.trim="questionEditForm.template" /></label><label class="field"><span>匹配方式</span><select v-model="questionEditForm.matchRule"><option value="exact">完全匹配</option><option value="case_insensitive">忽略大小写</option><option value="trim">忽略首尾空格</option></select></label><label class="field"><span>难度</span><input v-model.number="questionEditForm.difficulty" type="number" min="1" max="5" /></label><button class="primary-button" type="submit" :disabled="savingQuestionEdit"><Save :size="18" />{{ savingQuestionEdit ? '保存中...' : '保存更改' }}</button></div></form></div></Teleport>
-    <Teleport to="body"><div v-if="showGenerationModal" class="modal-backdrop"><section class="modal-panel generation-modal"><div class="modal-header"><h2>{{ generationTitle }}</h2><button class="icon-button" type="button" title="停止生成" @click="cancelGeneration"><X :size="20" /></button></div><div class="modal-body"><div class="generation-status"><span>{{ generationStatus }}</span><span>{{ generationText.length }} 字符</span></div><pre ref="generationOutput" class="generation-output">{{ generationText || '正在等待模型输出...' }}</pre><div v-if="generationError" class="notice error">{{ generationError }}</div><div v-if="generationResult" class="notice">{{ generationResult }}</div></div></section></div></Teleport>
+    <Teleport to="body"><div v-if="showGenerationModal" class="modal-backdrop"><section class="modal-panel generation-modal"><div class="modal-header"><h2>{{ generationTitle }}</h2><button class="icon-button" type="button" title="停止生成" @click="cancelGeneration"><X :size="20" /></button></div><div class="modal-body"><div class="generation-status"><span>{{ generationStatus }}</span><span>{{ generationText.length }} 字符</span></div><details v-if="generationReasoning || generationStatus.includes('推理')" class="generation-reasoning"><summary>思考过程 <span>{{ generationReasoning.length }} 字符</span></summary><pre ref="generationReasoningOutput" class="generation-reasoning-output">{{ generationReasoning || '正在等待推理输出...' }}</pre></details><pre ref="generationOutput" class="generation-output">{{ generationText || '正在等待模型输出...' }}</pre><div v-if="generationError" class="notice error">{{ generationError }}</div><div v-if="generationResult" class="notice">{{ generationResult }}</div></div></section></div></Teleport>
   </AppShell>
 </template>
 
 <script setup>
 import { Database, FileText, ListChecks, Pencil, PlusCircle, RefreshCw, Save, Settings, Sparkles, Trash2, X } from '@lucide/vue';
-import { nextTick, onMounted, ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { api, API_BASE } from '../api.js';
 import AppShell from '../components/AppShell.vue';
 import QuestionTypeBadge from '../components/QuestionTypeBadge.vue';
 
-const tab = ref('notes'); const notes = ref([]); const corpusGroups = ref([]); const questionGroups = ref([]); const corpusGroup = ref(''); const questionGroup = ref(''); const corpus = ref([]); const questions = ref([]); const message = ref(''); const error = ref(''); const savingNote = ref(false); const savingNoteEdit = ref(false); const savingCorpus = ref(false); const savingQuestionEdit = ref(false); const generating = ref(false); const showNoteEditor = ref(false); const showCorpusForm = ref(false); const showQuestionEditor = ref(false); const showGenerationModal = ref(false); const editingCorpusId = ref(null); const generationTitle = ref('AI 正在生成题目'); const generationText = ref(''); const generationStatus = ref('准备连接 AI...'); const generationError = ref(''); const generationResult = ref(''); const generationOutput = ref(null); let generationController = null;
+const tab = ref('notes'); const notes = ref([]); const corpusGroups = ref([]); const questionGroups = ref([]); const corpusGroup = ref(''); const questionGroup = ref(''); const corpus = ref([]); const questions = ref([]); const message = ref(''); const error = ref(''); const savingNote = ref(false); const savingNoteEdit = ref(false); const savingCorpus = ref(false); const savingQuestionEdit = ref(false); const generating = ref(false); const showNoteEditor = ref(false); const showCorpusForm = ref(false); const showQuestionEditor = ref(false); const showGenerationModal = ref(false); const editingCorpusId = ref(null); const generationTitle = ref('AI 正在生成题目'); const generationText = ref(''); const generationReasoning = ref(''); const generationStatus = ref('准备连接 AI...'); const generationError = ref(''); const generationResult = ref(''); const generationOutput = ref(null); const generationReasoningOutput = ref(null); let generationController = null; let generationScrollFrame = null; let generationBatchPending = false;
 const noteForm = ref({ title: '', rawContent: '' }); const noteEditForm = ref({ id: null, title: '', rawContent: '' }); const corpusForm = ref({ english: '', chinese: '', englishExplain: '', phonetic: '', tagsText: '' }); const questionEditForm = ref({ id: null, questionType: 'phrase', questionText: '', answersText: '', template: '', matchRule: 'exact', difficulty: 1 }); const questionTopic = ref('');
 const settingGroups = ref([]); const settingsForm = ref({}); const settingsLoading = ref(false); const settingsSaving = ref(false); const settingsError = ref(''); const settingsMessage = ref('');
 const secretKeys = new Set(['ai_api_key', 'tts_api_key', 'admin_password_hash', 'auth_secret']);
@@ -96,16 +96,33 @@ function beginGeneration(title) {
   generationTitle.value = title;
   showGenerationModal.value = true;
   generationText.value = '';
+  generationReasoning.value = '';
   generationError.value = '';
   generationResult.value = '';
   generationStatus.value = '正在连接 AI...';
+  generationBatchPending = false;
   generationController = new AbortController();
 }
 
-async function appendGenerationText(text) {
+function scheduleGenerationScroll() {
+  if (generationScrollFrame) return;
+  generationScrollFrame = requestAnimationFrame(() => {
+    generationScrollFrame = null;
+    if (generationOutput.value) generationOutput.value.scrollTop = generationOutput.value.scrollHeight;
+    if (generationReasoningOutput.value) generationReasoningOutput.value.scrollTop = generationReasoningOutput.value.scrollHeight;
+  });
+}
+
+function appendGenerationText(text) {
+  if (generationBatchPending && generationText.value) generationText.value += '\n\n--- 下一批解析结果 ---\n';
+  generationBatchPending = false;
   generationText.value += text;
-  await nextTick();
-  if (generationOutput.value) generationOutput.value.scrollTop = generationOutput.value.scrollHeight;
+  scheduleGenerationScroll();
+}
+
+function appendGenerationReasoning(text) {
+  generationReasoning.value += text;
+  scheduleGenerationScroll();
 }
 
 async function readGenerationStream(response, handleEvent) {
@@ -154,10 +171,10 @@ async function generateNoteCorpus(note) {
     await readGenerationStream(response, async (event) => {
       if (event.status === 'started') generationStatus.value = 'AI 正在解析笔记...';
       if (event.status === 'delta') {
-        generationStatus.value = event.phase === 'reasoning' ? 'AI 正在推理...' : 'AI 正在生成语料...';
-        await appendGenerationText(event.text);
+        if (event.phase === 'reasoning') { generationStatus.value = 'AI 正在推理...'; appendGenerationReasoning(event.text); }
+        else { generationStatus.value = 'AI 正在生成语料...'; appendGenerationText(event.text); }
       }
-      if (event.status === 'progress') generationStatus.value = `正在解析第 ${event.currentLine}/${event.totalLines} 行，已提取 ${event.extractedCount} 条`;
+      if (event.status === 'progress') { generationStatus.value = `正在解析第 ${event.currentLine}/${event.totalLines} 行，已提取 ${event.extractedCount} 条`; generationBatchPending = true; }
       if (event.status === 'error') throw new Error(event.message);
       if (event.status === 'done') {
         generationStatus.value = '生成完成';
@@ -207,8 +224,8 @@ async function generateQuestions(input = {}) {
     await readGenerationStream(response, async (event) => {
       if (event.status === 'started') generationStatus.value = 'AI 正在输出...';
       if (event.status === 'delta') {
-        generationStatus.value = event.phase === 'reasoning' ? 'AI 正在推理...' : 'AI 正在生成题目...';
-        await appendGenerationText(event.text);
+        if (event.phase === 'reasoning') { generationStatus.value = 'AI 正在推理...'; appendGenerationReasoning(event.text); }
+        else { generationStatus.value = 'AI 正在生成题目...'; appendGenerationText(event.text); }
       }
       if (event.status === 'error') throw new Error(event.message);
       if (event.status === 'done') {

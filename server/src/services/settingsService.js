@@ -63,7 +63,7 @@ export async function updateSettings(updates) {
   const allowedKeys = new Set([
     'app_port', 'app_client_origin', 'app_serve_client',
     'admin_password_hash', 'auth_secret',
-    'ai_base_url', 'ai_api_key', 'ai_model', 'ai_notes_model', 'ai_timeout_ms',
+    'ai_base_url', 'ai_api_key', 'ai_model', 'ai_notes_model', 'ai_timeout_ms', 'ai_thinking_budget',
     'tts_api_key', 'tts_model', 'tts_voice', 'tts_cache_path', 'tts_default_speed', 'tts_default_volume',
     'classroom_show_to_answer_delay', 'classroom_answer_hold_delay'
   ]);
@@ -127,6 +127,7 @@ export async function initSettingsFromEnv() {
     ['ai_model', process.env.SILICONFLOW_LLM_MODEL || process.env.AI_MODEL || 'deepseek-ai/DeepSeek-V4-Flash'],
     ['ai_notes_model', process.env.AI_NOTES_MODEL || process.env.AI_MODEL || 'Qwen/Qwen3-32B'],
     ['ai_timeout_ms', process.env.AI_TIMEOUT_MS || '12000'],
+    ['ai_thinking_budget', process.env.AI_THINKING_BUDGET || '1024'],
     ['tts_api_key', process.env.DASHSCOPE_API_KEY || ''],
     ['tts_model', process.env.TTS_MODEL || 'qwen3-tts-vd-2026-01-26'],
     ['tts_voice', process.env.TTS_VOICE || '沉稳清晰的女教师声音'],
