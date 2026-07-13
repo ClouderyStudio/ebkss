@@ -89,7 +89,9 @@ async function chatJson(messages, options = {}) {
   }
 
   // 非流式：固定超时
-  const timeoutMs = options.timeoutMs ?? config.ai.timeoutMs;
+  // Model providers commonly need more than 12 seconds to produce structured
+  // question sets. Keep legacy database settings from aborting valid requests.
+  const timeoutMs = Math.max(options.timeoutMs ?? config.ai.timeoutMs, 60000);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -112,6 +114,11 @@ async function chatJson(messages, options = {}) {
     const payload = await response.json();
     const content = payload?.choices?.[0]?.message?.content;
     return extractJson(content);
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(`AI request timed out after ${timeoutMs / 1000}s`);
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -123,95 +130,149 @@ async function chatJson(messages, options = {}) {
  */
 async function chatJsonStream(requestBody, options = {}) {
   const streamRequestBody = { ...requestBody, stream: true };
-  const inactivityTimeout = options.inactivityTimeoutMs ?? 30000; // 30秒无数据则超时
+  const inactivityTimeout = options.inactivityTimeoutMs ?? 60000;
+  const controller = new AbortController();
+  let timeoutId;
+  let timedOut = false;
+  let removeExternalAbort = () => {};
 
-  const response = await fetch(`${config.ai.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.ai.apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(streamRequestBody)
-  });
+  const resetInactivityTimeout = () => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, inactivityTimeout);
+  };
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`AI stream request failed (${response.status}): ${detail.slice(0, 240)}`);
+  if (options.signal) {
+    const abortFromCaller = () => controller.abort();
+    if (options.signal.aborted) {
+      abortFromCaller();
+    } else {
+      options.signal.addEventListener('abort', abortFromCaller, { once: true });
+      removeExternalAbort = () => options.signal.removeEventListener('abort', abortFromCaller);
+    }
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let accumulated = '';
-  let buffer = '';
-  let lastChunkTime = Date.now();
+  resetInactivityTimeout();
 
   try {
-    while (true) {
-      // 检查 inactivity 超时
-      const elapsed = Date.now() - lastChunkTime;
-      if (elapsed > inactivityTimeout) {
-        throw new Error(`AI stream timed out after ${inactivityTimeout / 1000}s of inactivity`);
-      }
+    const response = await fetch(`${config.ai.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.ai.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(streamRequestBody),
+      signal: controller.signal
+    });
 
-      const { done, value } = await reader.read();
-      if (done) break;
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`AI stream request failed (${response.status}): ${detail.slice(0, 240)}`);
+    }
 
-      // 收到数据，重置计时
-      lastChunkTime = Date.now();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulated = '';
+    let buffer = '';
 
-      buffer += decoder.decode(value, { stream: true });
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      // 解析 SSE 行：data: {...}
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // 保留不完整的最后一行
+        // A provider chunk means the model is still making progress.
+        resetInactivityTimeout();
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        buffer += decoder.decode(value, { stream: true });
 
-        const jsonStr = trimmed.slice(5).trim();
-        if (jsonStr === '[DONE]') continue;
+        // 解析 SSE 行：data: {...}
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // 保留不完整的最后一行
 
-        try {
-          const event = JSON.parse(jsonStr);
-          const delta = event?.choices?.[0]?.delta?.content;
-          if (delta) {
-            accumulated += delta;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data:')) continue;
+
+          const jsonStr = trimmed.slice(5).trim();
+          if (jsonStr === '[DONE]') continue;
+
+          try {
+            const event = JSON.parse(jsonStr);
+            const delta = event?.choices?.[0]?.delta || {};
+            if (delta.reasoning_content) {
+              options.onDelta?.(delta.reasoning_content, 'reasoning');
+            }
+            if (delta.content) {
+              accumulated += delta.content;
+              options.onDelta?.(delta.content, 'content');
+            }
+          } catch {
+            // 忽略无法解析的行
           }
-        } catch {
-          // 忽略无法解析的行
         }
       }
-    }
 
-    // 处理 buffer 中剩余数据
-    if (buffer.trim()) {
-      const trimmed = buffer.trim();
-      if (trimmed.startsWith('data:') && !trimmed.includes('[DONE]')) {
-        try {
-          const event = JSON.parse(trimmed.slice(5).trim());
-          const delta = event?.choices?.[0]?.delta?.content;
-          if (delta) accumulated += delta;
-        } catch { /* ignore */ }
+      // 处理 buffer 中剩余数据
+      if (buffer.trim()) {
+        const trimmed = buffer.trim();
+        if (trimmed.startsWith('data:') && !trimmed.includes('[DONE]')) {
+          try {
+            const event = JSON.parse(trimmed.slice(5).trim());
+            const delta = event?.choices?.[0]?.delta || {};
+            if (delta.reasoning_content) {
+              options.onDelta?.(delta.reasoning_content, 'reasoning');
+            }
+            if (delta.content) {
+              accumulated += delta.content;
+              options.onDelta?.(delta.content, 'content');
+            }
+          } catch { /* ignore */ }
+        }
       }
-    }
-  } finally {
-    reader.releaseLock();
-  }
 
-  return extractJson(accumulated);
+      return extractJson(accumulated);
+    } finally {
+      reader.releaseLock();
+    }
+  } catch (error) {
+    if (timedOut) {
+      throw new Error(`AI stream timed out after ${inactivityTimeout / 1000}s of inactivity`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    removeExternalAbort();
+  }
 }
 
 export async function generateQuestions({ topic = '英语学习', notesContent, count }) {
-  const data = await chatJson(
-    [
-      {
-        role: 'system',
-        content: '你是严谨的初中英语老师。只输出合法 JSON，不输出解释。'
-      },
-      {
-        role: 'user',
-        content: `你是英语老师。基于以下主题和笔记内容，生成${count}道题目。
+  const data = await chatJson(buildQuestionMessages(topic, notesContent, count), { temperature: 0.45, maxTokens: 2200 });
+  return normalizeGeneratedQuestions(data);
+}
+
+export async function generateQuestionsStream({ topic = '英语学习', notesContent, count, onDelta, signal }) {
+  const data = await chatJson(buildQuestionMessages(topic, notesContent, count), {
+    temperature: 0.45,
+    maxTokens: 4096,
+    stream: true,
+    inactivityTimeoutMs: 60000,
+    onDelta,
+    signal
+  });
+  return normalizeGeneratedQuestions(data);
+}
+
+function buildQuestionMessages(topic, notesContent, count) {
+  return [
+    {
+      role: 'system',
+      content: '你是严谨的初中英语老师。只输出合法 JSON，不输出解释。'
+    },
+    {
+      role: 'user',
+      content: `你是英语老师。基于以下主题和笔记内容，生成${count}道题目。
 
 主题：${topic}
 笔记内容：${notesContent}
@@ -230,11 +291,11 @@ export async function generateQuestions({ topic = '英语学习', notesContent, 
 4. 对于 analogy 类型，额外提供 template 字段
 5. 对于 translation/synonym 类型，acceptable_answers 可以是多个同义词
 6. 难度适合初中生`
-      }
-    ],
-    { temperature: 0.45, maxTokens: 2200 }
-  );
+    }
+  ];
+}
 
+function normalizeGeneratedQuestions(data) {
   const questions = Array.isArray(data) ? data : data.questions;
   return z.array(generatedQuestionSchema).parse(questions).map((question) => ({
     questionType: question.question_type,

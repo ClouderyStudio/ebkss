@@ -60,7 +60,20 @@ vi.mock('../src/services/aiService.js', () => ({
       requiresAi: false,
       difficulty: 1
     }
-  ])
+  ]),
+  generateQuestionsStream: vi.fn(async ({ onDelta }) => {
+    onDelta?.('{"questions":[]}');
+    return [
+      {
+        questionType: 'phrase',
+        questionText: '辨认出',
+        acceptableAnswers: ['make out'],
+        matchRule: 'case_insensitive',
+        requiresAi: false,
+        difficulty: 1
+      }
+    ];
+  })
 }));
 
 vi.mock('../src/services/contentService.js', () => ({
@@ -212,5 +225,16 @@ describe('api routes', () => {
 
     const graph = await request(app).get('/api/graph?group=give').expect(200);
     expect(graph.body.graph.nodes[0].id).toBe('give_up');
+  });
+
+  it('streams AI question generation progress', async () => {
+    const response = await request(app)
+      .post('/api/ai/generate/stream')
+      .send({ topic: '现在完成时', notesContent: 'have/has done', count: 1 })
+      .expect(200);
+
+    expect(response.headers['content-type']).toContain('text/event-stream');
+    expect(response.text).toContain('"status":"delta"');
+    expect(response.text).toContain('"status":"done"');
   });
 });

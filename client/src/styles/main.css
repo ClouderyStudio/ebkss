@@ -956,6 +956,36 @@ textarea {
   max-height: 80vh;
   overflow-y: auto;
 }
+
+.generation-modal {
+  width: min(760px, 94vw);
+  max-width: 760px;
+}
+
+.generation-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.generation-output {
+  min-height: 280px;
+  max-height: 52vh;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .modal-header {
   display: flex;
   align-items: center;

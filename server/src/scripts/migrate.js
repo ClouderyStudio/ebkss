@@ -256,6 +256,10 @@ async function migrate() {
       );
     }
 
+    // Older releases used 12 seconds, which is too short for structured AI
+    // generation on a cold or busy model endpoint.
+    await connection.query("UPDATE settings SET `value` = '60000' WHERE `key` = 'ai_timeout_ms' AND `value` = '12000'");
+
     const indexStatements = [
       ['units', 'uniq_units_name_grade', 'ALTER TABLE units ADD UNIQUE KEY uniq_units_name_grade (name, grade_level)'],
       [

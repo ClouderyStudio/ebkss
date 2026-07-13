@@ -3,7 +3,7 @@ import express from 'express';
 import { z } from 'zod';
 import { execute, pingDatabase, query } from './db.js';
 import { config } from './config.js';
-import { generateQuestions, parseEnglishNotes } from './services/aiService.js';
+import { generateQuestions, generateQuestionsStream, parseEnglishNotes } from './services/aiService.js';
 import {
   createNote,
   createNoteFromDocx,
@@ -508,6 +508,50 @@ export function createApp() {
       res.json({ questions });
     } catch (error) {
       next(error);
+    }
+  });
+
+  app.post('/api/ai/generate/stream', async (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      }
+    };
+
+    const controller = new AbortController();
+    req.once('aborted', () => controller.abort());
+    res.once('close', () => {
+      if (!res.writableEnded) controller.abort();
+    });
+
+    try {
+      const input = z
+        .object({
+          topic: z.string().trim().min(1).optional().default('英语学习'),
+          notesContent: z.string().optional().default(''),
+          count: z.coerce.number().int().min(1).max(12).default(4)
+        })
+        .parse(req.body);
+
+      send({ status: 'started' });
+      const questions = await generateQuestionsStream({
+        ...input,
+        signal: controller.signal,
+        onDelta: (text, phase) => send({ status: 'delta', text, phase })
+      });
+      send({ status: 'done', questions });
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        send({ status: 'error', message: error.message || 'AI 生成失败' });
+      }
+    } finally {
+      res.end();
     }
   });
 
