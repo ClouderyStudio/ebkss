@@ -83,6 +83,11 @@ vi.mock('../src/services/contentService.js', () => ({
   updateNote: vi.fn(async (id, input) => ({ id, ...input })),
   deleteStandaloneNote: vi.fn(),
   generateCorpusForNote: vi.fn(),
+  generateCorpusForNoteStream: vi.fn(async (_id, groupName, { onDelta, onProgress } = {}) => {
+    onProgress?.({ currentLine: 1, totalLines: 1, extractedCount: 0 });
+    onDelta?.('{"entries":[]}', 'content');
+    return { groupName, imported: 1, items: [] };
+  }),
   generateQuestionsForNote: vi.fn(),
   getQuestionGroups: vi.fn(async () => [{ groupName: '历史题目', itemCount: 1 }]),
   createQuestionGroup: vi.fn(async (groupName) => ({ groupName, itemCount: 0 })),
@@ -236,6 +241,15 @@ describe('api routes', () => {
       })
       .expect(200);
     expect(question.body.question.difficulty).toBe(2);
+  });
+
+  it('streams note corpus generation progress', async () => {
+    const response = await request(app)
+      .post('/api/content/notes/3/generate-corpus/stream')
+      .send({ groupName: '笔记语料' })
+      .expect(200);
+    expect(response.text).toContain('"status":"delta"');
+    expect(response.text).toContain('"status":"done"');
   });
 
   it('generates questions and returns graphs', async () => {

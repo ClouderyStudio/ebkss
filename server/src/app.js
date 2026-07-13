@@ -12,6 +12,7 @@ import {
   deleteStandaloneQuestion,
   deleteStandaloneQuestionGroup,
   generateCorpusForNote,
+  generateCorpusForNoteStream,
   generateQuestionsForNote,
   getNotes,
   getQuestionGroups as getStandaloneQuestionGroups,
@@ -190,6 +191,39 @@ export function createApp() {
 
   app.delete('/api/content/notes/:id', async (req, res, next) => {
     try { const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params); res.json(await deleteStandaloneNote(id)); } catch (error) { next(error); }
+  });
+
+  app.post('/api/content/notes/:id/generate-corpus/stream', async (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const send = (payload) => {
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+    const controller = new AbortController();
+    req.once('aborted', () => controller.abort());
+    res.once('close', () => {
+      if (!res.writableEnded) controller.abort();
+    });
+
+    try {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      const { groupName } = z.object({ groupName: z.string().trim().min(1).max(100) }).parse(req.body);
+      send({ status: 'started' });
+      const result = await generateCorpusForNoteStream(id, groupName, {
+        signal: controller.signal,
+        onDelta: (text, phase) => send({ status: 'delta', text, phase }),
+        onProgress: ({ currentLine, totalLines, extractedCount }) => send({ status: 'progress', currentLine, totalLines, extractedCount })
+      });
+      send({ status: 'done', result });
+    } catch (error) {
+      if (!controller.signal.aborted) send({ status: 'error', message: error.message || 'AI 生成语料失败' });
+    } finally {
+      res.end();
+    }
   });
 
   app.post('/api/content/notes/:id/generate-corpus', async (req, res, next) => {

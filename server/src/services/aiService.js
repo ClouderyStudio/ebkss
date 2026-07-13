@@ -433,44 +433,69 @@ const importEntrySchema = z.object({
  * AI 解析英语笔记文本，提取结构化语料条目（english / chinese / englishExplain / phonetic / tags）。
  */
 export async function parseEnglishNotes(notesText, groupName) {
-  // 使用 JSON 模式 + 更高性能的模型，分块处理
+  return parseEnglishNotesInternal({ notesText, groupName });
+}
+
+export async function parseEnglishNotesStream({ notesText, groupName, onDelta, onProgress, signal }) {
+  return parseEnglishNotesInternal({ notesText, groupName, onDelta, onProgress, signal });
+}
+
+async function parseEnglishNotesInternal({ notesText, groupName, onDelta, onProgress, signal }) {
+  // 每条语料包含翻译、音标和标签；小批次避免 JSON 在输出上限处被截断。
   const lines = notesText.split('\n').filter(Boolean);
-  const chunkSize = 20;
+  const chunkSize = 8;
+  const maxTokens = 4096;
   const allEntries = [];
 
   for (let i = 0; i < lines.length; i += chunkSize) {
     const chunk = lines.slice(i, i + chunkSize).join('\n');
+    onProgress?.({ currentLine: i + 1, totalLines: lines.length, extractedCount: allEntries.length });
 
     const model = config.ai.notesModel || config.ai.model;
-    const data = await chatJson(
-      [
-        {
-          role: 'system',
-          content: `You are an English vocabulary note parser. Extract vocabulary items and return a JSON object with an "entries" array.
+    let data;
+    try {
+      data = await chatJson(
+        [
+          {
+            role: 'system',
+            content: `You are an English vocabulary note parser. Extract vocabulary items and return a JSON object with an "entries" array.
 Each entry MUST include: "english" (word/phrase), "chinese" (Chinese meaning), "phonetic" (IPA pronunciation like /ɡɪv ʌp/ — ALWAYS generate phonetics for every English word), "tags" (array of "vocabulary"|"phrase"|"grammar"|"sentence").
 Optional: "englishExplain" (short English explanation).`
-        },
-        {
-          role: 'user',
-          content: `Extract vocabulary entries from this English study note. Return JSON with "entries" array.
+          },
+          {
+            role: 'user',
+            content: `Extract vocabulary entries from this English study note. Return JSON with "entries" array.
 
 ${chunk}
 
 Group: ${groupName}`
+          }
+        ],
+        {
+          model,
+          temperature: 0.05,
+          maxTokens,
+          jsonMode: true,
+          stream: true,
+          inactivityTimeoutMs: 60000,
+          onDelta,
+          signal
         }
-      ],
-      {
-        model,
-        temperature: 0.05,
-        maxTokens: 1000,
-        jsonMode: true,
-        stream: true,
-        inactivityTimeoutMs: 60000
+      );
+    } catch (error) {
+      const range = `${i + 1}-${Math.min(i + chunkSize, lines.length)}`;
+      if (/JSON|Unexpected|Expected ','|unterminated/i.test(error.message)) {
+        throw new Error(`AI 解析第 ${range} 行时输出被截断或格式不完整，请重试`);
       }
-    );
+      throw error;
+    }
 
     const entries = Array.isArray(data) ? data : (data.entries || data.items || []);
+    if (!entries.length && chunk.trim()) {
+      throw new Error(`AI 未从第 ${i + 1}-${Math.min(i + chunkSize, lines.length)} 行输出有效语料`);
+    }
     allEntries.push(...entries);
+    onProgress?.({ currentLine: Math.min(i + chunkSize, lines.length), totalLines: lines.length, extractedCount: allEntries.length });
   }
 
   return z.array(importEntrySchema).parse(allEntries);

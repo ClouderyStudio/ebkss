@@ -20,8 +20,8 @@
             <div class="note-card-header"><strong>{{ note.title || '未命名笔记' }}</strong><small>{{ formatDate(note.createdAt) }}</small></div>
             <pre class="note-preview">{{ note.rawContent }}</pre>
             <div class="note-card-actions">
-              <button class="secondary-button small-button" @click="generateNoteCorpus(note)"><Database :size="16" />生成语料</button>
-              <button class="secondary-button small-button" @click="generateNoteQuestions(note)"><Sparkles :size="16" />生成题目</button>
+              <button class="secondary-button small-button" :disabled="generating" @click="generateNoteCorpus(note)"><Database :size="16" />生成语料</button>
+              <button class="secondary-button small-button" :disabled="generating" @click="generateNoteQuestions(note)"><Sparkles :size="16" />生成题目</button>
               <button class="secondary-button small-button" @click="openNoteEditor(note)"><Pencil :size="16" />编辑</button>
               <button class="secondary-button small-button danger-button" @click="removeNote(note)"><Trash2 :size="16" />删除</button>
             </div>
@@ -40,7 +40,7 @@
       <section v-show="tab === 'questions'" class="control-panel">
         <div class="section-title"><ListChecks :size="22" /><h1>题目管理</h1></div>
         <div class="form-grid"><label class="field"><span>题目组</span><select v-model="questionGroup"><option v-for="group in questionGroups" :key="group.groupName" :value="group.groupName">{{ group.groupName }} ({{ group.itemCount }})</option></select></label><button class="secondary-button" @click="newQuestionGroup"><PlusCircle :size="18" />新建组</button><button class="secondary-button danger-button" :disabled="!questionGroup" @click="removeQuestionGroup"><Trash2 :size="18" />删除组</button></div>
-        <label class="field"><span>生成主题</span><textarea v-model="questionTopic" rows="3" placeholder="输入内容后 AI 生成题目" /></label><button class="primary-button" :disabled="!questionGroup || !questionTopic || generating" @click="generateQuestions"><Sparkles :size="18" />AI生成题目</button>
+        <label class="field"><span>生成主题</span><textarea v-model="questionTopic" rows="3" placeholder="输入内容后 AI 生成题目" /></label><button class="primary-button" :disabled="!questionGroup || !questionTopic || generating" @click="generateQuestions()"><Sparkles :size="18" />AI生成题目</button>
         <section class="draft-panel"><div class="section-title"><h2>{{ questionGroup || '请选择题目组' }}</h2><button class="secondary-button small-button" @click="loadQuestions"><RefreshCw :size="16" />刷新</button></div><article v-for="question in questions" :key="question.id" class="question-card"><div class="question-card-header"><QuestionTypeBadge :type="question.questionType" /><div class="action-row"><button class="icon-button small-button" title="编辑题目" @click="openQuestionEditor(question)"><Pencil :size="16" /></button><button class="icon-button small-button danger-button" title="删除题目" @click="removeQuestion(question)"><Trash2 :size="16" /></button></div></div><p>{{ question.questionText }}</p><div class="tag-line"><span v-for="answer in question.acceptableAnswers" :key="answer" class="type-badge">{{ answer }}</span></div></article></section>
       </section>
 
@@ -64,7 +64,7 @@
     <Teleport to="body"><div v-if="showNoteEditor" class="modal-backdrop" @click.self="showNoteEditor = false"><form class="modal-panel" @submit.prevent="saveNoteEdit"><div class="modal-header"><h2>编辑笔记</h2><button class="icon-button" type="button" title="关闭" @click="showNoteEditor = false"><X :size="20" /></button></div><div class="modal-body"><label class="field"><span>标题</span><input v-model.trim="noteEditForm.title" placeholder="可选" /></label><label class="field"><span>内容 *</span><textarea v-model.trim="noteEditForm.rawContent" rows="7" required /></label><button class="primary-button" type="submit" :disabled="savingNoteEdit"><Save :size="18" />{{ savingNoteEdit ? '保存中...' : '保存更改' }}</button></div></form></div></Teleport>
     <Teleport to="body"><div v-if="showCorpusForm" class="modal-backdrop" @click.self="showCorpusForm = false"><form class="modal-panel" @submit.prevent="saveCorpus"><div class="modal-header"><h2>{{ editingCorpusId ? '编辑语料' : '新增语料' }}</h2><button class="icon-button" type="button" title="关闭" @click="showCorpusForm = false"><X :size="20" /></button></div><div class="modal-body"><label class="field"><span>英语 *</span><input v-model.trim="corpusForm.english" required /></label><label class="field"><span>中文</span><input v-model.trim="corpusForm.chinese" /></label><label class="field"><span>英文解释</span><textarea v-model.trim="corpusForm.englishExplain" rows="2" /></label><label class="field"><span>音标</span><input v-model.trim="corpusForm.phonetic" /></label><label class="field"><span>标签（逗号分隔）</span><input v-model="corpusForm.tagsText" /></label><button class="primary-button" type="submit" :disabled="savingCorpus"><Save :size="18" />{{ savingCorpus ? '保存中...' : '保存' }}</button></div></form></div></Teleport>
     <Teleport to="body"><div v-if="showQuestionEditor" class="modal-backdrop" @click.self="showQuestionEditor = false"><form class="modal-panel" @submit.prevent="saveQuestionEdit"><div class="modal-header"><h2>编辑题目</h2><button class="icon-button" type="button" title="关闭" @click="showQuestionEditor = false"><X :size="20" /></button></div><div class="modal-body"><label class="field"><span>题型</span><select v-model="questionEditForm.questionType"><option value="collocation">固定搭配</option><option value="translation">中英互译</option><option value="synonym">同义词</option><option value="analogy">类似结构</option><option value="morphology">词形变化</option><option value="phrase">短语</option></select></label><label class="field"><span>题干 *</span><textarea v-model.trim="questionEditForm.questionText" rows="3" required /></label><label class="field"><span>可接受答案（每行一个）*</span><textarea v-model="questionEditForm.answersText" rows="3" required /></label><label v-if="questionEditForm.questionType === 'analogy'" class="field"><span>模板句</span><input v-model.trim="questionEditForm.template" /></label><label class="field"><span>匹配方式</span><select v-model="questionEditForm.matchRule"><option value="exact">完全匹配</option><option value="case_insensitive">忽略大小写</option><option value="trim">忽略首尾空格</option></select></label><label class="field"><span>难度</span><input v-model.number="questionEditForm.difficulty" type="number" min="1" max="5" /></label><button class="primary-button" type="submit" :disabled="savingQuestionEdit"><Save :size="18" />{{ savingQuestionEdit ? '保存中...' : '保存更改' }}</button></div></form></div></Teleport>
-    <Teleport to="body"><div v-if="showGenerationModal" class="modal-backdrop"><section class="modal-panel generation-modal"><div class="modal-header"><h2>AI 正在生成题目</h2><button class="icon-button" type="button" title="停止生成" @click="cancelGeneration"><X :size="20" /></button></div><div class="modal-body"><div class="generation-status"><span>{{ generationStatus }}</span><span>{{ generationText.length }} 字符</span></div><pre ref="generationOutput" class="generation-output">{{ generationText || '正在等待模型输出...' }}</pre><div v-if="generationError" class="notice error">{{ generationError }}</div><div v-if="generationSaved" class="notice">已保存 {{ generationSaved }} 道题目到“{{ questionGroup }}”</div></div></section></div></Teleport>
+    <Teleport to="body"><div v-if="showGenerationModal" class="modal-backdrop"><section class="modal-panel generation-modal"><div class="modal-header"><h2>{{ generationTitle }}</h2><button class="icon-button" type="button" title="停止生成" @click="cancelGeneration"><X :size="20" /></button></div><div class="modal-body"><div class="generation-status"><span>{{ generationStatus }}</span><span>{{ generationText.length }} 字符</span></div><pre ref="generationOutput" class="generation-output">{{ generationText || '正在等待模型输出...' }}</pre><div v-if="generationError" class="notice error">{{ generationError }}</div><div v-if="generationResult" class="notice">{{ generationResult }}</div></div></section></div></Teleport>
   </AppShell>
 </template>
 
@@ -75,7 +75,7 @@ import { api, API_BASE } from '../api.js';
 import AppShell from '../components/AppShell.vue';
 import QuestionTypeBadge from '../components/QuestionTypeBadge.vue';
 
-const tab = ref('notes'); const notes = ref([]); const corpusGroups = ref([]); const questionGroups = ref([]); const corpusGroup = ref(''); const questionGroup = ref(''); const corpus = ref([]); const questions = ref([]); const message = ref(''); const error = ref(''); const savingNote = ref(false); const savingNoteEdit = ref(false); const savingCorpus = ref(false); const savingQuestionEdit = ref(false); const generating = ref(false); const showNoteEditor = ref(false); const showCorpusForm = ref(false); const showQuestionEditor = ref(false); const showGenerationModal = ref(false); const editingCorpusId = ref(null); const generationText = ref(''); const generationStatus = ref('准备连接 AI...'); const generationError = ref(''); const generationSaved = ref(0); const generationOutput = ref(null); let generationController = null;
+const tab = ref('notes'); const notes = ref([]); const corpusGroups = ref([]); const questionGroups = ref([]); const corpusGroup = ref(''); const questionGroup = ref(''); const corpus = ref([]); const questions = ref([]); const message = ref(''); const error = ref(''); const savingNote = ref(false); const savingNoteEdit = ref(false); const savingCorpus = ref(false); const savingQuestionEdit = ref(false); const generating = ref(false); const showNoteEditor = ref(false); const showCorpusForm = ref(false); const showQuestionEditor = ref(false); const showGenerationModal = ref(false); const editingCorpusId = ref(null); const generationTitle = ref('AI 正在生成题目'); const generationText = ref(''); const generationStatus = ref('准备连接 AI...'); const generationError = ref(''); const generationResult = ref(''); const generationOutput = ref(null); let generationController = null;
 const noteForm = ref({ title: '', rawContent: '' }); const noteEditForm = ref({ id: null, title: '', rawContent: '' }); const corpusForm = ref({ english: '', chinese: '', englishExplain: '', phonetic: '', tagsText: '' }); const questionEditForm = ref({ id: null, questionType: 'phrase', questionText: '', answersText: '', template: '', matchRule: 'exact', difficulty: 1 }); const questionTopic = ref('');
 const settingGroups = ref([]); const settingsForm = ref({}); const settingsLoading = ref(false); const settingsSaving = ref(false); const settingsError = ref(''); const settingsMessage = ref('');
 const secretKeys = new Set(['ai_api_key', 'tts_api_key', 'admin_password_hash', 'auth_secret']);
@@ -91,8 +91,99 @@ async function createNote() { savingNote.value = true; try { await api.content.c
 function openNoteEditor(note) { noteEditForm.value = { id: note.id, title: note.title || '', rawContent: note.rawContent || '' }; showNoteEditor.value = true; }
 async function saveNoteEdit() { savingNoteEdit.value = true; try { await api.content.updateNote(noteEditForm.value.id, { title: noteEditForm.value.title, rawContent: noteEditForm.value.rawContent }); showNoteEditor.value = false; message.value = '笔记已更新'; await loadNotes(); } catch (err) { reportError(err); } finally { savingNoteEdit.value = false; } }
 async function removeNote(note) { if (!confirm(`删除笔记“${note.title || '未命名'}”？`)) return; try { await api.content.deleteNote(note.id); await loadNotes(); } catch (err) { reportError(err); } }
-async function generateNoteCorpus(note) { const groupName = prompt('输出到哪个语料组？', corpusGroup.value || '笔记语料'); if (!groupName?.trim()) return; try { const result = await api.content.generateCorpus(note.id, { groupName: groupName.trim(), mode: 'ai' }); message.value = `已生成 ${result.result.imported} 条语料`; await loadCorpusGroups(); corpusGroup.value = groupName.trim(); } catch (err) { reportError(err); } }
-async function generateNoteQuestions(note) { const groupName = prompt('输出到哪个题目组？', questionGroup.value || '笔记题目'); if (!groupName?.trim()) return; try { const result = await api.content.generateQuestions(note.id, { questionGroup: groupName.trim(), count: 4 }); message.value = `已生成 ${result.insertedCount} 道题目`; await loadQuestionGroups(); questionGroup.value = groupName.trim(); } catch (err) { reportError(err); } }
+function beginGeneration(title) {
+  generating.value = true;
+  generationTitle.value = title;
+  showGenerationModal.value = true;
+  generationText.value = '';
+  generationError.value = '';
+  generationResult.value = '';
+  generationStatus.value = '正在连接 AI...';
+  generationController = new AbortController();
+}
+
+async function appendGenerationText(text) {
+  generationText.value += text;
+  await nextTick();
+  if (generationOutput.value) generationOutput.value.scrollTop = generationOutput.value.scrollHeight;
+}
+
+async function readGenerationStream(response, handleEvent) {
+  if (!response.ok || !response.body) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || '无法建立 AI 流式连接');
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      const text = line.trim();
+      if (!text.startsWith('data:')) continue;
+      await handleEvent(JSON.parse(text.slice(5).trim()));
+    }
+  }
+}
+
+function handleGenerationFailure(err) {
+  if (err.name === 'AbortError') generationStatus.value = '已停止生成';
+  else {
+    generationError.value = err.message;
+    generationStatus.value = '生成失败';
+    reportError(err);
+  }
+}
+
+async function generateNoteCorpus(note) {
+  const groupName = prompt('输出到哪个语料组？', corpusGroup.value || '笔记语料');
+  if (!groupName?.trim()) return;
+  const normalizedGroup = groupName.trim();
+  beginGeneration('AI 正在生成语料');
+  try {
+    const response = await fetch(`${API_BASE}/api/content/notes/${note.id}/generate-corpus/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupName: normalizedGroup }),
+      signal: generationController.signal
+    });
+    await readGenerationStream(response, async (event) => {
+      if (event.status === 'started') generationStatus.value = 'AI 正在解析笔记...';
+      if (event.status === 'delta') {
+        generationStatus.value = event.phase === 'reasoning' ? 'AI 正在推理...' : 'AI 正在生成语料...';
+        await appendGenerationText(event.text);
+      }
+      if (event.status === 'progress') generationStatus.value = `正在解析第 ${event.currentLine}/${event.totalLines} 行，已提取 ${event.extractedCount} 条`;
+      if (event.status === 'error') throw new Error(event.message);
+      if (event.status === 'done') {
+        generationStatus.value = '生成完成';
+        generationResult.value = `已保存 ${event.result.imported} 条语料到“${normalizedGroup}”`;
+        corpusGroup.value = normalizedGroup;
+        await Promise.all([loadCorpusGroups(), loadCorpus()]);
+      }
+    });
+  } catch (err) {
+    handleGenerationFailure(err);
+  } finally {
+    generating.value = false;
+    generationController = null;
+  }
+}
+
+async function generateNoteQuestions(note) {
+  const groupName = prompt('输出到哪个题目组？', questionGroup.value || '笔记题目');
+  if (!groupName?.trim()) return;
+  await generateQuestions({
+    topic: note.title || '导入笔记',
+    notesContent: note.rawContent,
+    groupName: groupName.trim(),
+    clearTopic: false
+  });
+}
 async function newCorpusGroup() { const name = prompt('新语料组名称'); if (!name?.trim()) return; try { await api.createClassroomGroup(name.trim()); await loadCorpusGroups(); corpusGroup.value = name.trim(); } catch (err) { reportError(err); } }
 async function removeCorpusGroup() { if (!confirm(`删除语料组“${corpusGroup.value}”及其内容？`)) return; try { await api.deleteClassroomGroup(corpusGroup.value); corpusGroup.value = ''; corpus.value = []; await loadCorpusGroups(); } catch (err) { reportError(err); } }
 function openCorpusForm(item = null) { editingCorpusId.value = item?.id ?? null; corpusForm.value = item ? { english: item.english || '', chinese: item.chinese || '', englishExplain: item.englishExplain || '', phonetic: item.phonetic || '', tagsText: (item.tags || []).join(', ') } : { english: '', chinese: '', englishExplain: '', phonetic: '', tagsText: '' }; showCorpusForm.value = true; }
@@ -100,7 +191,43 @@ async function saveCorpus() { savingCorpus.value = true; try { const payload = {
 async function removeCorpus(item) { if (!confirm(`删除“${item.english}”？`)) return; try { await api.deleteClassroomItem(item.id); await loadCorpus(); await loadCorpusGroups(); } catch (err) { reportError(err); } }
 async function newQuestionGroup() { const name = prompt('新题目组名称'); if (!name?.trim()) return; try { await api.content.createQuestionGroup(name.trim()); await loadQuestionGroups(); questionGroup.value = name.trim(); } catch (err) { reportError(err); } }
 async function removeQuestionGroup() { if (!confirm(`删除题目组“${questionGroup.value}”及其内容？`)) return; try { await api.content.deleteQuestionGroup(questionGroup.value); questionGroup.value = ''; questions.value = []; await loadQuestionGroups(); } catch (err) { reportError(err); } }
-async function generateQuestions() { generating.value = true; showGenerationModal.value = true; generationText.value = ''; generationError.value = ''; generationSaved.value = 0; generationStatus.value = '正在连接 AI...'; generationController = new AbortController(); try { const response = await fetch(`${API_BASE}/api/ai/generate/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: questionGroup.value, notesContent: questionTopic.value, count: 4 }), signal: generationController.signal }); if (!response.ok || !response.body) { const data = await response.json().catch(() => ({})); throw new Error(data.error || '无法建立 AI 流式连接'); } const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ''; while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || ''; for (const line of lines) { const text = line.trim(); if (!text.startsWith('data:')) continue; const event = JSON.parse(text.slice(5).trim()); if (event.status === 'started') generationStatus.value = 'AI 正在输出...'; if (event.status === 'delta') { generationStatus.value = event.phase === 'reasoning' ? 'AI 正在推理...' : 'AI 正在生成题目...'; generationText.value += event.text; await nextTick(); if (generationOutput.value) generationOutput.value.scrollTop = generationOutput.value.scrollHeight; } if (event.status === 'error') throw new Error(event.message); if (event.status === 'done') { generationStatus.value = '正在保存题目...'; const result = await api.content.saveQuestions({ questionGroup: questionGroup.value, questions: event.questions }); generationSaved.value = result.insertedCount; generationStatus.value = '生成完成'; questionTopic.value = ''; await loadQuestions(); await loadQuestionGroups(); } } } } catch (err) { if (err.name === 'AbortError') generationStatus.value = '已停止生成'; else { generationError.value = err.message; generationStatus.value = '生成失败'; reportError(err); } } finally { generating.value = false; generationController = null; } }
+async function generateQuestions(input = {}) {
+  const groupName = input.groupName || questionGroup.value;
+  const notesContent = input.notesContent ?? questionTopic.value;
+  if (!groupName || !notesContent?.trim()) return;
+
+  beginGeneration('AI 正在生成题目');
+  try {
+    const response = await fetch(`${API_BASE}/api/ai/generate/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic: input.topic || groupName, notesContent, count: 4 }),
+      signal: generationController.signal
+    });
+    await readGenerationStream(response, async (event) => {
+      if (event.status === 'started') generationStatus.value = 'AI 正在输出...';
+      if (event.status === 'delta') {
+        generationStatus.value = event.phase === 'reasoning' ? 'AI 正在推理...' : 'AI 正在生成题目...';
+        await appendGenerationText(event.text);
+      }
+      if (event.status === 'error') throw new Error(event.message);
+      if (event.status === 'done') {
+        generationStatus.value = '正在保存题目...';
+        const result = await api.content.saveQuestions({ questionGroup: groupName, questions: event.questions });
+        generationResult.value = `已保存 ${result.insertedCount} 道题目到“${groupName}”`;
+        generationStatus.value = '生成完成';
+        if (input.clearTopic !== false) questionTopic.value = '';
+        questionGroup.value = groupName;
+        await Promise.all([loadQuestionGroups(), loadQuestions()]);
+      }
+    });
+  } catch (err) {
+    handleGenerationFailure(err);
+  } finally {
+    generating.value = false;
+    generationController = null;
+  }
+}
 function cancelGeneration() { generationController?.abort(); showGenerationModal.value = false; }
 function openQuestionEditor(question) { questionEditForm.value = { id: question.id, questionType: question.questionType, questionText: question.questionText || '', answersText: (question.acceptableAnswers || []).join('\n'), template: question.template || '', matchRule: question.matchRule || 'exact', difficulty: question.difficulty || 1 }; showQuestionEditor.value = true; }
 async function saveQuestionEdit() { const acceptableAnswers = questionEditForm.value.answersText.split(/\r?\n/).map((answer) => answer.trim()).filter(Boolean); if (!acceptableAnswers.length) { reportError(new Error('请至少填写一个可接受答案')); return; } savingQuestionEdit.value = true; try { await api.content.updateQuestion(questionEditForm.value.id, { questionType: questionEditForm.value.questionType, questionText: questionEditForm.value.questionText, acceptableAnswers, template: questionEditForm.value.questionType === 'analogy' ? questionEditForm.value.template || null : null, matchRule: questionEditForm.value.matchRule, difficulty: questionEditForm.value.difficulty }); showQuestionEditor.value = false; message.value = '题目已更新'; await loadQuestions(); } catch (err) { reportError(err); } finally { savingQuestionEdit.value = false; } }

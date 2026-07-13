@@ -1,5 +1,5 @@
 import { execute, query, withTransaction } from '../db.js';
-import { generateQuestions, gradeAnalogy, parseEnglishNotes } from './aiService.js';
+import { generateQuestions, gradeAnalogy, parseEnglishNotes, parseEnglishNotesStream } from './aiService.js';
 import { createClassroomCorpusItem } from './classroomService.js';
 import { mapCorpusRow, toDbQuestion } from './corpusMapper.js';
 import { checkAnswer, parseAcceptableAnswers } from '../utils/answerMatcher.js';
@@ -190,5 +190,26 @@ export async function generateCorpusForNote(noteId, groupName, mode = 'ai') {
   const entries = await parseNoteEntries(noteId, mode);
   const items = [];
   for (const entry of entries) items.push(await createClassroomCorpusItem({ ...entry, groupName, sourceKey: `note-${noteId}-${entry.english}-${Date.now()}` }));
+  return { noteId, groupName, imported: items.length, items };
+}
+
+export async function generateCorpusForNoteStream(noteId, groupName, { onDelta, onProgress, signal } = {}) {
+  const [note] = await getNotesByIds([noteId]);
+  if (!note) throw new Error('笔记不存在');
+
+  const entries = await parseEnglishNotesStream({
+    notesText: note.rawContent,
+    groupName,
+    onDelta,
+    onProgress,
+    signal
+  });
+  if (!entries.length) throw new Error('未能从笔记中提取出有效条目');
+
+  await execute('UPDATE imported_notes SET parsed_entries = CAST(? AS JSON) WHERE id = ?', [JSON.stringify(entries), noteId]);
+  const items = [];
+  for (const entry of entries) {
+    items.push(await createClassroomCorpusItem({ ...entry, groupName, sourceKey: `note-${noteId}-${entry.english}-${Date.now()}` }));
+  }
   return { noteId, groupName, imported: items.length, items };
 }
