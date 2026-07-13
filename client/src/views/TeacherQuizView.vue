@@ -101,6 +101,14 @@
           </div>
           <div class="modal-body">
             <label class="settings-row">
+              <span>语料组</span>
+              <select v-model="groupName">
+                <option v-for="group in groups" :key="group.groupName" :value="group.groupName">
+                  {{ group.groupName }} ({{ group.itemCount }})
+                </option>
+              </select>
+            </label>
+            <label class="settings-row">
               <span>展示模式</span>
               <select v-model="mode">
                 <option v-for="option in modeOptions" :key="option.value" :value="option.value">
@@ -190,6 +198,8 @@ const modeOptions = [
 ];
 
 const groupName = ref(CLASSROOM_CONFIG.defaultGroup);
+const groups = ref([]);
+const classroomReady = ref(false);
 const mode = ref(CLASSROOM_CONFIG.defaultMode);
 const items = ref([]);
 const graph = ref(null);
@@ -400,13 +410,16 @@ async function loadClassroom() {
   stopAudio();
 
   try {
-    const [corpusResult, graphResult] = await Promise.all([
-      api.classroomCorpus(groupName.value),
-      api.classroomGraph(groupName.value)
-    ]);
+    const corpusResult = await api.classroomCorpus(groupName.value);
     items.value = corpusResult.items || [];
-    graph.value = graphResult.graph;
-    graphCached.value = graphResult.cached;
+    try {
+      const graphResult = await api.classroomGraph(groupName.value);
+      graph.value = graphResult.graph;
+      graphCached.value = graphResult.cached;
+    } catch {
+      graph.value = null;
+      graphCached.value = false;
+    }
     currentIndex.value = 0;
     answerVisible.value = false;
     if (isRunning.value) {
@@ -416,6 +429,17 @@ async function loadClassroom() {
     error.value = err.message;
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadGroups() {
+  try {
+    groups.value = (await api.classroomGroups()).groups || [];
+    if (!groups.value.some((group) => group.groupName === groupName.value)) {
+      groupName.value = groups.value[0]?.groupName || '';
+    }
+  } catch (err) {
+    error.value = err.message;
   }
 }
 
@@ -454,8 +478,11 @@ watch(speed, () => {
     playCurrentAudio();
   }
 });
+watch(groupName, () => {
+  if (classroomReady.value && groupName.value) loadClassroom();
+});
 
-onMounted(() => {
+onMounted(async () => {
   if ('speechSynthesis' in window) {
     window.speechSynthesis.onvoiceschanged = () => {
       selectedBrowserVoice = null;
@@ -463,7 +490,9 @@ onMounted(() => {
     };
     getBrowserVoice();
   }
-  loadClassroom();
+  await loadGroups();
+  classroomReady.value = true;
+  if (groupName.value) await loadClassroom();
   window.addEventListener('keydown', onKeydown);
 });
 
