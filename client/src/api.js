@@ -32,6 +32,7 @@ export const api = {
   content: {
     notes: () => request('/api/content/notes'),
     createNote: (payload) => request('/api/content/notes', { method: 'POST', body: JSON.stringify(payload) }),
+    updateNote: (id, payload) => request(`/api/content/notes/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
     deleteNote: (id) => request(`/api/content/notes/${id}`, { method: 'DELETE' }),
     generateCorpus: (id, payload) => request(`/api/content/notes/${id}/generate-corpus`, { method: 'POST', body: JSON.stringify(payload) }),
     generateQuestions: (id, payload) => request(`/api/content/notes/${id}/generate-questions`, { method: 'POST', body: JSON.stringify(payload) }),
@@ -42,6 +43,7 @@ export const api = {
     quiz: (group, count = 8) => request(`/api/content/quiz?group=${encodeURIComponent(group)}&count=${count}`),
     submit: (payload) => request('/api/content/submit', { method: 'POST', body: JSON.stringify(payload) }),
     saveQuestions: (payload) => request('/api/content/questions', { method: 'POST', body: JSON.stringify(payload) }),
+    updateQuestion: (id, payload) => request(`/api/content/questions/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
     deleteQuestion: (id) => request(`/api/content/questions/${id}`, { method: 'DELETE' })
   },
   classroomCorpus: (group = 'give') => request(`/api/corpus?group=${encodeURIComponent(group)}`),

@@ -17,6 +17,17 @@ export async function createNote({ title = '', rawContent, sourceType = 'text', 
   return note;
 }
 
+export async function updateNote(id, { title = '', rawContent }) {
+  if (!rawContent?.trim()) throw new Error('笔记内容不能为空');
+  const result = await execute(
+    'UPDATE imported_notes SET title = ?, raw_content = ?, parsed_entries = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [title, rawContent, id]
+  );
+  if (!result.affectedRows) throw new Error('笔记不存在');
+  const [note] = await getNotesByIds([id]);
+  return note;
+}
+
 async function getNotesByIds(ids) {
   if (!ids.length) return [];
   const rows = await query(`SELECT id, title, raw_content, parsed_entries, source_type, source_key, created_at, updated_at FROM imported_notes WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
@@ -106,6 +117,45 @@ export async function saveQuestions({ questionGroup, questions }) {
     ids.push(result.insertId);
   }
   return { insertedCount: ids.length, insertedIds: ids };
+}
+
+export async function updateStandaloneQuestion(id, input) {
+  const rows = await query('SELECT * FROM corpus WHERE id = ?', [id]);
+  const existing = rows[0];
+  if (!existing) throw new Error('题目不存在');
+
+  const question = toDbQuestion(
+    {
+      ...input,
+      requiresAi: input.questionType === 'analogy'
+    },
+    {}
+  );
+  await execute(
+    `
+      UPDATE corpus
+      SET question_type = ?,
+          question_text = ?,
+          acceptable_answers = CAST(? AS JSON),
+          template = ?,
+          match_rule = ?,
+          requires_ai = ?,
+          difficulty = ?
+      WHERE id = ?
+    `,
+    [
+      question.questionType,
+      question.questionText,
+      JSON.stringify(question.acceptableAnswers),
+      question.template,
+      question.matchRule,
+      question.requiresAi ? 1 : 0,
+      question.difficulty,
+      id
+    ]
+  );
+  const [updated] = await query('SELECT * FROM corpus WHERE id = ?', [id]);
+  return mapCorpusRow(updated, { includeAnswers: true });
 }
 
 export async function deleteStandaloneQuestion(id) {

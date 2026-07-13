@@ -80,6 +80,7 @@ vi.mock('../src/services/contentService.js', () => ({
   getNotes: vi.fn(async () => []),
   createNote: vi.fn(),
   createNoteFromDocx: vi.fn(),
+  updateNote: vi.fn(async (id, input) => ({ id, ...input })),
   deleteStandaloneNote: vi.fn(),
   generateCorpusForNote: vi.fn(),
   generateQuestionsForNote: vi.fn(),
@@ -89,6 +90,7 @@ vi.mock('../src/services/contentService.js', () => ({
   getQuestions: vi.fn(async () => [{ id: 9, questionType: 'phrase', questionText: '辨认出', acceptableAnswers: ['make out'] }]),
   getQuizByGroup: vi.fn(async () => [{ id: 9, questionType: 'phrase', questionText: '辨认出' }]),
   saveQuestions: vi.fn(async () => ({ insertedCount: 1, insertedIds: [9] })),
+  updateStandaloneQuestion: vi.fn(async (id, input) => ({ id, ...input })),
   deleteStandaloneQuestion: vi.fn(async (id) => ({ deleted: true, id })),
   submitContentQuiz: vi.fn(async () => ({ recordId: 1, totalQuestions: 1, correctCount: 1, score: 100, accuracy: 1, results: [] })),
   parseNoteEntries: vi.fn()
@@ -214,6 +216,26 @@ describe('api routes', () => {
 
     const deleted = await request(app).delete('/api/content/questions/9').expect(200);
     expect(deleted.body.deleted).toBe(true);
+  });
+
+  it('updates standalone notes and questions', async () => {
+    const note = await request(app)
+      .put('/api/content/notes/3')
+      .send({ title: 'Updated note', rawContent: 'New note content' })
+      .expect(200);
+    expect(note.body.note.rawContent).toBe('New note content');
+
+    const question = await request(app)
+      .put('/api/content/questions/9')
+      .send({
+        questionType: 'phrase',
+        questionText: 'Complete the phrase',
+        acceptableAnswers: ['make out'],
+        matchRule: 'case_insensitive',
+        difficulty: 2
+      })
+      .expect(200);
+    expect(question.body.question.difficulty).toBe(2);
   });
 
   it('generates questions and returns graphs', async () => {

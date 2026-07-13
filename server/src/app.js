@@ -19,7 +19,9 @@ import {
   getQuizByGroup,
   parseNoteEntries,
   saveQuestions,
-  submitContentQuiz
+  submitContentQuiz,
+  updateNote,
+  updateStandaloneQuestion
 } from './services/contentService.js';
 import { signToken, verifyToken } from './services/authService.js';
 import { getAllSettings, getGroupedSettings, updateSettings } from './services/settingsService.js';
@@ -178,6 +180,14 @@ export function createApp() {
     } catch (error) { next(error); }
   });
 
+  app.put('/api/content/notes/:id', async (req, res, next) => {
+    try {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      const input = z.object({ title: z.string().trim().max(200).default(''), rawContent: z.string().trim().min(1) }).parse(req.body);
+      res.json({ note: await updateNote(id, input) });
+    } catch (error) { next(error); }
+  });
+
   app.delete('/api/content/notes/:id', async (req, res, next) => {
     try { const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params); res.json(await deleteStandaloneNote(id)); } catch (error) { next(error); }
   });
@@ -227,6 +237,21 @@ export function createApp() {
 
   app.post('/api/content/questions', async (req, res, next) => {
     try { res.status(201).json(await saveQuestions(req.body)); } catch (error) { next(error); }
+  });
+
+  app.put('/api/content/questions/:id', async (req, res, next) => {
+    try {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      const input = z.object({
+        questionType: z.enum(['collocation', 'translation', 'synonym', 'analogy', 'morphology', 'phrase']),
+        questionText: z.string().trim().min(1),
+        acceptableAnswers: z.array(z.string().trim().min(1)).min(1).max(20),
+        template: z.string().trim().nullable().optional(),
+        matchRule: z.enum(['exact', 'case_insensitive', 'trim']).default('exact'),
+        difficulty: z.coerce.number().int().min(1).max(5).default(1)
+      }).parse(req.body);
+      res.json({ question: await updateStandaloneQuestion(id, input) });
+    } catch (error) { next(error); }
   });
 
   app.delete('/api/content/questions/:id', async (req, res, next) => {
